@@ -1,0 +1,1497 @@
+---
+title: Explore the CCHS PUMF data
+author: Shefali Lathwal
+date: 2025-05-11
+date-modified: last-modified
+toc: true
+format: html
+jupyter: python3
+---
+
+# Load the data
+
+There are two csv files available. I will have to see which ones to use.
+
+```{python}
+import pandas as pd
+import numpy as np
+
+df = pd.read_csv("/Users/shefalilathwal/Documents/diabetes_canada_project/data/pumf_cchs.csv")
+df.head()
+
+#df.to_csv("/Users/shefalilathwal/Documents/Hands_on_machine_learning/projects/data/pumf_cchs.txt", sep='\t', index=False)
+```
+
+```{python}
+print(df.shape)
+col_list = df.columns.tolist()
+print(col_list)
+```
+
+The data consists of 108,252 rows and 691 columns.
+
+# Age category of the respondent
+
+```{python}
+df[["DHHGAGE"]].value_counts()
+```
+
+# Has diabetes
+
+```{python}
+df[["CCC_095"]].value_counts()
+```
+
+Codes 9, 7, and 8 are for either refusing to disclose diabetes status, or not knowing or not stated. I should only keep the rows with known diabetes status.
+
+```{python}
+#df[]
+df = df[df["CCC_095"].isin([1.0, 2.0])]
+print(df["CCC_095"].value_counts())
+
+#df["diabetes"].value_counts()
+```
+
+# Select only adult population
+
+```{python}
+df = df[~(df["DHHGAGE"] == 1)]
+df["DHHGAGE"].value_counts()
+```
+
+# Explore columns in the dataframe
+
+```{python}
+df.shape
+#df[["DHHGAGE", "CCC_095"]].plot(kind = "box", by = "CCC_095")
+df["EHG2DVH3"].value_counts()
+```
+
+# Plot data in some columns
+
+-   Look at diabetes prevalence by state for adults over the age of 18.
+-   Count the number of diabetes and non-diabetes cases in each state
+
+```{python}
+import matplotlib.pyplot as plt
+import geopandas as gpd
+df_subset = df[["GEOGPRV","CCC_095"]]
+df_subset
+#grouped = df_subset.groupby(["GEOGPRV"])
+
+geo_mapping = dict([("NEWFOUNDLAND AND LABRADOR", 10),
+("PRINCE EDWARD ISLAND", 11),
+("NOVA SCOTIA", 12),
+("NEW BRUNSWICK", 13),
+("QUEBEC", 24),
+("ONTARIO", 35),
+("MANITOBA" , 46),
+("SASKATCHEWAN" ,47),
+("ALBERTA", 48),
+("BRITISH COLUMBIA" , 59),
+("YUKON/NORTHWEST/NUNAVUT TERRITORIES",60)]
+ )
+geo_mapping_reverse = {v: k for k,v in geo_mapping.items()}
+#print(geo_mapping_reverse)
+#for name, group in grouped:
+ #   print(name)
+#    print(round(group["CCC_095"].value_counts()/group.shape[0], 4)*100)
+
+#def
+
+grouped = df_subset.groupby(["GEOGPRV"])["CCC_095"]
+grouped_df = grouped.value_counts()/grouped.size()*100
+
+grouped_df = grouped_df.reset_index()
+#print(grouped_df.columns[2])
+grouped_df = grouped_df.rename(columns = {grouped_df.columns[2]: "percent_respondents"})
+#print(grouped_df)
+grouped_df["Name"] = [geo_mapping_reverse[num] for num in grouped_df["GEOGPRV"]]
+#print(grouped_df)
+df_plot = grouped_df[grouped_df["CCC_095"] == 1].sort_values(by ="percent_respondents")
+
+fig, ax = plt.subplots()
+df_plot.plot.barh(y = "percent_respondents", x = "Name",ax = ax)
+ax.set_xlabel("% of respondents with diabetes")
+ax.set_ylabel("Province/Territory")
+#df_plot
+
+# Save data for use later
+df_combined_plot = df_plot.copy()
+df_combined_plot = df_combined_plot.rename(columns = {"percent_respondents":"pct_resp_with_diabetes"}, inplace = False).drop(columns = "CCC_095", inplace=False)
+```
+
+```{python}
+import geopandas as gpd
+gdf = gpd.read_file("/Users/shefalilathwal/Documents/diabetes_canada_project/lpr_000b16a_f/lpr_000b16a_f.shp")
+gdf.plot()
+gdf
+```
+
+## Plot the data on the map
+
+```{python}
+#gdf.info()
+##gdf["PRIDU"] = pd.to_numeric(gdf["PRIDU"])
+#gdf.info()
+merged_df = gdf.merge(df_plot, left_on = pd.to_numeric(gdf["PRIDU"]), right_on = "GEOGPRV", how = "outer")
+
+# Modify the values for Northwest Territories an Nunavut to same as Yukon, since all values are merged in the data
+
+territory_value = merged_df[merged_df["PRIDU"]=="60"]["percent_respondents"].values[0]
+merged_df.loc[merged_df["PRIDU"].isin(["61", "62"]),"percent_respondents"] = territory_value
+
+merged_df
+
+fig, ax = plt.subplots(figsize=(12, 8))
+merged_df.plot(column='percent_respondents', legend=True, cmap='bwr', ax = ax)
+ax.set_title('Percentage of survey respondents with diabetes')
+ax.set_axis_off()
+#ax.get_figure().axes[1].set_title("percentage")
+#plt.axis("off")
+#plt.legend("")
+```
+
+## Count % of diabetes cases by health region
+
+```{python}
+df_subset = df[["GEOGPRV","GEODGHR4","CCC_095"]]
+
+grouped = df_subset.groupby(["GEOGPRV","GEODGHR4"])["CCC_095"]
+grouped_df = grouped.value_counts()/grouped.size()*100
+
+grouped_df = grouped_df.reset_index()
+grouped_df = grouped_df.rename(columns = {grouped_df.columns[3]: "percent_respondents"})
+df_plot = grouped_df[grouped_df["CCC_095"] == 1].sort_values(by ="percent_respondents")
+fig, ax = plt.subplots()
+df_plot.plot.barh(y = "percent_respondents", x = "GEODGHR4",ax = ax)
+ax.set_xlabel("% of respondents with diabetes")
+ax.set_ylabel("Health Region")
+
+#import geopandas as gpd
+#gdf = gpd.read_file("/Users/shefalilathwal/Documents/Hands_on_machine_learning/projects/Dig2023_shp-eng/HR_000a23a_e/HR_000a23a_e.shp")
+#gdf.merge(df_plot, left_on = "HR_UID", right_on = "")
+#grouped_df = grouped.value_counts()/grouped.size()*100
+```
+
+## Count percente of diabetes cases with age
+
+```{python}
+df_subset = df[["DHHGAGE","CCC_095"]]
+age_mapping = {"12-17": 1, "18-34": 2, "35-49": 3, "50-64": 4, "65+": 5}
+age_mapping_reverse = {v: k for k, v in age_mapping.items()}
+
+grouped = df_subset.groupby(["DHHGAGE"])["CCC_095"]
+grouped_df = grouped.value_counts()/grouped.size()*100
+
+grouped_df = grouped_df.reset_index()
+grouped_df = grouped_df.rename(columns = {grouped_df.columns[2]: "percent_respondents"})
+grouped_df["Age"] = [age_mapping_reverse[num] for num in grouped_df["DHHGAGE"]]
+
+df_plot = grouped_df[grouped_df["CCC_095"] == 1].sort_values(by ="percent_respondents")
+fig, ax = plt.subplots()
+df_plot.plot.barh(y = "percent_respondents", x = "Age",ax = ax)
+ax.set_xlabel("% of respondents with diabetes")
+ax.set_ylabel("Age in years")
+```
+
+# Count diabetes percentage by province and gender
+
+```{python}
+df_subset = df[["GEOGPRV","DHH_SEX","CCC_095"]]
+
+grouped = df_subset.groupby(["GEOGPRV","DHH_SEX"])["CCC_095"]
+grouped_df = grouped.value_counts()/grouped.size()*100
+
+grouped_df = grouped_df.reset_index()
+grouped_df = grouped_df.rename(columns = {grouped_df.columns[3]: "percent_respondents"})
+grouped_df["Name"] = [geo_mapping_reverse[num] for num in grouped_df["GEOGPRV"]]
+grouped_df
+df_plot = grouped_df[grouped_df["CCC_095"] == 1]
+#print(df_plot)
+df_plot = df_plot.pivot(index = "Name", columns = "DHH_SEX", values = "percent_respondents", ).rename(columns = {1.0: "Male", 2.0: "Female"}).sort_values(by = "Male", ascending = True)
+df_plot
+fig,  ax = plt.subplots()
+df_plot.plot.barh(ax = ax)
+ax.legend(title = "SEX AT BIRTH")
+#fig, ax = plt.subplots()
+#for gender in df_plot["DHH_SEX"].unique():
+#    gender_data = df_plot[df_plot["DHH_SEX"]== gender]
+#    plt.barh(width = df_plot["percent_respondents"], y = df_plot["Name"], label = gender)
+    #plt.bar(x = df_plot["percent_respondents"], y = df_plot["GEOGPRV"], label = gender)
+#fig, ax = plt.subplots()
+#df_plot.plot.barh(y = "percent_respondents", x = "DHH_SEX",ax = ax)
+#ax.set_xlabel("% of respondents with diabetes")
+#ax.set_ylabel("Health Region")
+```
+
+# Count Diabetes by indegenous population in each state
+
+```{python}
+#SDC_015: Column for abiriginal identity
+df_subset = df[["GEOGPRV","SDC_015","CCC_095"]]
+
+grouped = df_subset.groupby(["GEOGPRV","SDC_015"])["CCC_095"]
+grouped_df = grouped.value_counts()/grouped.size()*100
+
+grouped_df = grouped_df.reset_index()
+grouped_df = grouped_df.rename(columns = {grouped_df.columns[3]: "percent_respondents"})
+grouped_df["Name"] = [geo_mapping_reverse[num] for num in grouped_df["GEOGPRV"]]
+grouped_df
+df_plot = grouped_df[grouped_df["CCC_095"] == 1]
+df_plot
+for group in grouped_df["GEOGPRV"].unique():
+    print(group)
+    tmp_df = grouped.value_counts().reset_index()
+    print(tmp_df[tmp_df["GEOGPRV"]==group])
+    print(grouped_df[grouped_df["GEOGPRV"] == group])
+#print(df_plot)
+#df_plot = df_plot.pivot(index = "Name", columns = "SDC_015", values = "percent_respondents", )
+#.rename(columns = {1.0: "Yes", 2.0: "No", 7.0:"Don't Know", 8.0: "Refusal", 9.0: "Not Stated"}).sort_values(by = "Male", ascending = True)
+#df_plot
+#fig,  ax = plt.subplots()
+#df_plot.plot.barh(ax = ax)
+#ax.legend(title = "SEX AT BIRTH")
+```
+
+# Look at age distribution by state
+
+For this analysis, remember that I have removed the youth population. So, the calculated percentages will be percentage of all adult survey respondents in each province/territory.
+
+```{python}
+df_subset = df[["GEOGPRV","DHHGAGE","CCC_095"]]
+count_df = df_subset.groupby(["GEOGPRV","DHHGAGE"], as_index=False).size()
+count_df
+total_province_count = df_subset.groupby(["GEOGPRV"]).size()
+for num in count_df["GEOGPRV"].unique():
+    count_df.loc[count_df["GEOGPRV"] == num, "province_count"] = total_province_count.loc[num]
+count_df["percent_age_group"] = (count_df["size"]/count_df["province_count"])*100
+count_df
+geo_mapping = dict([("NEWFOUNDLAND AND LABRADOR", 10),
+("PRINCE EDWARD ISLAND", 11),
+("NOVA SCOTIA", 12),
+("NEW BRUNSWICK", 13),
+("QUEBEC", 24),
+("ONTARIO", 35),
+("MANITOBA" , 46),
+("SASKATCHEWAN" ,47),
+("ALBERTA", 48),
+("BRITISH COLUMBIA" , 59),
+("YUKON/NORTHWEST/NUNAVUT TERRITORIES",60)]
+ )
+geo_mapping_reverse = {v: k for k,v in geo_mapping.items()}
+
+count_df["Name"] = [geo_mapping_reverse[num] for num in count_df["GEOGPRV"]]
+#print(grouped_df)
+df_plot = count_df[count_df["DHHGAGE"] == 5].sort_values(by ="percent_age_group")
+df_plot
+
+for num in df_combined_plot["GEOGPRV"].unique():
+    #print(num)
+    age_value = df_plot[df_plot["GEOGPRV"] == num]["percent_age_group"].values[0]
+    #print(age_value)
+    df_combined_plot.loc[df_combined_plot["GEOGPRV"] == num,"pct_age_group_above_65"] = age_value
+#df_combined_plot
+
+#df_combined_plot
+df_plot
+fig, ax = plt.subplots()
+df_plot.plot.barh(y = "percent_age_group", x = "Name",ax = ax)
+ax.set_xlabel("% of respondents 65+ years")
+ax.set_ylabel("Province/Territory")
+```
+
+# Look at diabetes prevalence by household income
+
+```{python}
+#INCDGHH - Household income level
+df_subset = df[["GEOGPRV","INCDGHH","CCC_095"]]
+count_df = df_subset.groupby(["GEOGPRV","INCDGHH"], as_index=False).size()
+count_df
+total_province_count = df_subset.groupby(["GEOGPRV"]).size()
+for num in count_df["GEOGPRV"].unique():
+    count_df.loc[count_df["GEOGPRV"] == num, "province_count"] = total_province_count.loc[num]
+count_df["percent_income_group"] = (count_df["size"]/count_df["province_count"])*100
+count_df
+geo_mapping = dict([("NEWFOUNDLAND AND LABRADOR", 10),
+("PRINCE EDWARD ISLAND", 11),
+("NOVA SCOTIA", 12),
+("NEW BRUNSWICK", 13),
+("QUEBEC", 24),
+("ONTARIO", 35),
+("MANITOBA" , 46),
+("SASKATCHEWAN" ,47),
+("ALBERTA", 48),
+("BRITISH COLUMBIA" , 59),
+("YUKON/NORTHWEST/NUNAVUT TERRITORIES",60)]
+ )
+geo_mapping_reverse = {v: k for k,v in geo_mapping.items()}
+
+count_df["Name"] = [geo_mapping_reverse[num] for num in count_df["GEOGPRV"]]
+count_df
+#print(grouped_df)
+df_plot = count_df[count_df["INCDGHH"] == 1].sort_values(by ="percent_income_group")
+df_plot
+
+for num in df_combined_plot["GEOGPRV"].unique():
+    #print(num)
+    income_value = df_plot[df_plot["GEOGPRV"] == num]["percent_income_group"].values[0]
+    #print(age_value)
+    df_combined_plot.loc[df_combined_plot["GEOGPRV"] == num,"pct_income_group_below_20000"] = income_value
+
+fig, ax = plt.subplots()
+df_plot.plot.barh(y = "percent_income_group", x = "Name",ax = ax)
+ax.set_xlabel("% of respondents with income below $20,000")
+ax.set_ylabel("Province/Territory")
+```
+
+# Combined data with diabetes prevalence, age above 65 and income below \$20000
+
+```{python}
+df_combined_plot
+corr = df_combined_plot[["pct_resp_with_diabetes","pct_age_group_above_65", "pct_income_group_below_20000"]].corr()
+corr
+```
+
+# Plot data on a map
+
+```{python}
+import geopandas as gpd
+
+# All health regions
+gdf = gpd.read_file("/Users/shefalilathwal/Documents/diabetes_canada_project/Dig2023_shp-eng/HR_000a23a_e/HR_000a23a_e.shp")
+gdf
+```
+
+```{python}
+gdf.plot()
+# Modify the plot
+gdf.plot(figsize=(12, 8), color='lightgray', edgecolor='black')
+plt.title('Canadian Health Regions')
+plt.xlabel('Longitude')
+plt.ylabel('Latitude')
+
+```
+
+# Select columns to include in the initial model
+
+```{python}
+#cols_to_keep = ["GEOGPRV", "DHH_SEX", "DHHGMS", "DHHDGHSZ", "DHHGAGE","EHG2DVH3","GEN_005", "GEN_010", "GEN_015", "GEN_020", "GEN_025", "GEN_030", "HWT_050", "HWTDGISW", "CCC_035", "CCC_065", "CCC_070", "CCC_075", "CCC_080", "CCC_095", "CCC_185", "CCC_195", "CCC_200", "CCCDGRSP", "CCCDGSKL", "CCCDGCAR", "HUIDGHSI", "HUIDGPAD", "SMK_005", "SMK_030", "SMKG035", "SMK_045", "SMK_050", "SMK_060", "SMK_075", "SMK_100", "SMKDVSTY", "SMKDGYCS", "DOETS", "ETS_005", "ALC_005", "ALC_015", "ALCDVTTM", "DOALW", "ALWDVWKY", "ALWDVDLY", "CAN_015", "SDS_005", "DRGDVYA", "DOPAA", "PAA_030", "PAA_050", "PAA_080", "PAA_095", "PAA_105", "PAADVTRA", "PAADVREC", "PAADVRCA"," PAADVOTH", "PAADVOTA", "PAADVMVA", "PAADVACV", "PAADVAC2", "PAADVVIG", "PAADVVOL"]
+
+#num_cols = ["PAA_050", "PAA_080", "PAA_105", "PAADVTRA", "PAADVREC", "PAADVRCA"," PAADVOTH", "PAADVOTA", "PAADVMVA", "PAADVVIG", "PAADVVOL"]
+
+
+cols_to_keep = ["GEOGPRV", "DHH_SEX", "DHHGMS", "DHHDGHSZ", "DHHGAGE","EHG2DVH3","GENDVHDI", "GENDVMHI", "GENDVSWL","HWTDGISW", "CCC_035", "CCC_065", "CCC_070", "CCC_075", "CCC_080", "CCC_095", "CCC_185", "CCC_195", "CCC_200","CCCDGRSP", "CCCDGSKL", "CCCDGCAR","HUIDGHSI", "HUIDGPAD", "SMKDVSTY", "SMKDGYCS","SMKDGSTP","ETS_005","ALCDVTTM", "ALWDVWKY", "ALWDVDLY","CAN_015","SDS_005","DRGDVYA","DRGDVLA","PAADVTRV", "PAADVREC", "PAADVOTH", "PAADVMVA", "PAADVVIG","PAADVVOL", "LBFDGHPW", "SDC_015","SDCDGCB","SDCDVIMM","SDCDVFLA","INCDGHH"]
+
+ord_cols = ["EHG2DVH3","GENDVHDI","GENDVMHI", "GENDVSWL","SMKDGYCS","SMKDGSTP", "INCDGHH"]
+num_cols = ["ALWDVWKY","ALWDVDLY", "PAADVTRV", "PAADVREC","PAADVOTH","PAADVMVA" , "PAADVVIG","PAADVVOL","LBFDGHPW"]
+cat_cols = ["GEOGPRV","DHH_SEX", "DHHGMS","DHHDGHSZ","DHHGAGE","HWTDGISW","CCC_035", "CCC_065", "CCC_070", "CCC_075", "CCC_080", "CCC_185", "CCC_195", "CCC_200","CCCDGRSP", "CCCDGSKL", "CCCDGCAR","HUIDGHSI", "HUIDGPAD","SMKDVSTY","ETS_005","ALCDVTTM", "CAN_015", "SDS_005","DRGDVYA","DRGDVLA","SDC_015","SDCDGCB","SDCDVIMM","SDCDVFLA"]
+target_col = ["CCC_095"]
+
+len(cols_to_keep) == len(ord_cols+num_cols+cat_cols+target_col)
+```
+
+# Let's explore some of the columns we are going to examine
+
+```{python}
+from sklearn.preprocessing import MinMaxScaler
+df = df[cols_to_keep]
+df["INCDGHH"].value_counts().sort_index().plot(kind = "bar" )
+df["INCDGHH"].value_counts()
+
+df_test = df[["INCDGHH"]].copy()
+df_test["test_col"] = df_test["INCDGHH"].replace({9.0:np.nan})
+df_test["test_col"].value_counts(), df_test["test_col"].isna().sum()
+scaler = MinMaxScaler()
+scaler.fit(df_test)
+scaler.min_, scaler.scale_, scaler.data_min_, scaler.data_max_
+df_output = scaler.fit_transform(df_test)
+df_output
+```
+
+# Explore numerical columns
+
+```{python}
+df_test = df[num_cols+target_col]
+df_nan = check_special_missing(df_test)
+df_nan.isna().sum()/df_nan.shape[0]*100
+
+# All of the numerical columns have 60-80% data missing
+```
+
+# Explore ordinal columns
+
+```{python}
+df_test = df[ord_cols+target_col]
+df_nan = check_special_missing(df_test)
+df_nan.isna().sum()/df_nan.shape[0]*100
+
+#SMKDGYCS and SMKDGSTP have 90% and 66% data missing. Rest have 5% or less
+```
+
+# Explore the categorical columns
+
+```{python}
+df_test = df[cat_cols+target_col]
+df_nan = check_special_missing(df_test)
+df_nan.isna().sum()/df_nan.shape[0]*100
+
+# ETS_005, SDS_005, DRGDVYA, and DRGDVLA have 32%, 82%, 67% and 67% missing data. The next highest is HWTDGISW which has 7.5% missing. The rest are 6% or below
+```
+
+# Cols with a lot of missing data
+
+```{python}
+cols_with_more_than_60_pct_missing_data = num_cols+["SMKDGYCS", "SMKDGSTP"]+["SDS_005","DRGDVYA","DRGDVLA"]
+cols_with_more_than_60_pct_missing_data
+cols_with_more_than_30_pct_missing_data = num_cols+["SMKDGYCS", "SMKDGSTP"]+["ETS_005","SDS_005","DRGDVYA","DRGDVLA"]
+cols_with_more_than_30_pct_missing_data
+```
+
+# Let's split the data into training and test sets
+
+```{python}
+from sklearn.model_selection import train_test_split
+df_train_set, df_test_set = train_test_split(df, test_size = 0.3, random_state = 42, shuffle = True, stratify = df["CCC_095"])
+
+# Confirm stratification
+df_train_set["CCC_095"].value_counts()/df_train_set.shape[0], df_test_set["CCC_095"].value_counts()/df_test_set.shape[0], df["CCC_095"].value_counts()/df.shape[0]
+
+X_train = df_train_set.copy().drop(columns = "CCC_095", inplace = False)
+y_train = df_train_set["CCC_095"].copy()
+
+X_test = df_test_set.copy().drop(columns = "CCC_095", inplace = False)
+y_test = df_test_set["CCC_095"].copy()
+
+
+# Convert the target variable into True and False
+y_train = (y_train == 1)
+y_test = (y_test == 1)
+y_train.sum(), y_test.sum(), y_train, y_test
+```
+
+# Prepare the data for machine learning models
+
+For ordinal and numerical columns, I need to deal with codes for missing data. For ordinal data:
+
+-   I want to change the codes to -1 and then proceed. Let's see how it goes.
+
+For numerical data: - I also want to scale the data, but missing values should not be included in scaling.
+
+```{python}
+
+# Step1:  convert_missing_codes to na
+
+def check_special_missing(df):
+    df_cleaned = df.copy()
+    missing_summary = {}
+    #max_val_list = []
+    for col in df.columns:
+        #print(col)
+        if df[col].dtype in [np.float64, np.int64]:
+            unique_vals = df[col].dropna().unique()
+            #print(len(unique_vals), unique_vals)
+            if len(unique_vals) == 0:
+                continue
+            max_val = max(unique_vals)
+            #max_val_list.append(max_val)
+            #print(max_val)
+            missing_codes = []
+            # Identify the missing value codes based on magnitude
+            if max_val < 10:  # single digits (1–9)
+                missing_codes = [6, 7, 8, 9]
+            elif max_val < 100:  # double digits (01–99)
+                missing_codes = [96, 97, 98, 99]
+            elif max_val < 1000:  # triple digits (001–999)
+                missing_codes = [996, 997, 998, 999, 999.6, 999.7, 999.8, 999.9]
+            elif max_val < 10000:
+                missing_codes = [9996, 9997, 9998, 9999, 9999.90, 9999.80, 9999.70, 9999.60]
+            elif max_val < 100000:
+                missing_codes = [99996, 99997, 99998, 99999]
+            else:
+                continue
+            
+            # Count and replace
+            if missing_codes:
+                counts = {code: (df[col] == code).sum() for code in missing_codes}
+                if any(counts.values()):
+                    missing_summary[col] = counts
+                df_cleaned[col] = df_cleaned[col].replace(missing_codes, np.nan)
+
+    # Return cleaned data and summary
+    return df_cleaned
+
+
+```
+
+# Make a pre-processing pipeline for ordinal variables
+
+```{python}
+from sklearn.pipeline import Pipeline, make_pipeline, FeatureUnion, make_union
+from sklearn.preprocessing import FunctionTransformer
+from sklearn.compose import ColumnTransformer, make_column_transformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, OrdinalEncoder, MinMaxScaler
+
+#def fillna(df):
+#    return df.fillna(-1)
+
+def fillna_array(X):
+    return np.nan_to_num(X, nan = -1)
+
+ord_pipeline = Pipeline([
+    ("convert_to_na", FunctionTransformer(func = check_special_missing, feature_names_out="one-to-one")),
+    ("min_max_scaler", MinMaxScaler()),
+    ("fill_na", FunctionTransformer(func = fillna_array, feature_names_out = "one-to-one"))
+    ])
+
+X_ord = ord_pipeline.fit_transform(X_train[ord_cols])
+
+# Replace NA values with -1
+#X_ord = X_ord.fillna(-1)
+
+
+
+print((X_ord == -1).sum())
+#X_train[ord_cols[6]].value_counts().sort_index()
+X_ord = pd.DataFrame(X_ord, index = X_train[ord_cols].index, columns = ord_pipeline.get_feature_names_out())
+X_ord
+```
+
+# Make a pre-processing pipeline for numerical data
+
+-   replace codes with nan
+-   Scale the remaining data using standard scaler
+-   Replace nan values with -1
+
+```{python}
+# fillna function does not work here because we get an array because of StandardScaler. So we need a function that will work on arrays
+
+#my_array = np.array([[5, 6, 7, 7, np.nan, 8], [12, 14, 10, np.nan, 11, 14]])
+
+def fillna_array(X):
+    return np.nan_to_num(X, nan = -1)
+    
+
+#fillna_array(my_array)
+num_pipeline = Pipeline([
+    ("convert_to_na", FunctionTransformer(func = check_special_missing, feature_names_out="one-to-one")),
+    ("standard_scaler", StandardScaler()),
+    ("fill_na", FunctionTransformer(func = fillna_array, feature_names_out="one-to-one"))
+])
+
+X_num = num_pipeline.fit_transform(X_train[num_cols])
+X_num = pd.DataFrame(X_num, index = X_train[num_cols].index, columns = num_pipeline.get_feature_names_out())
+X_num
+```
+
+# Make a pre-processing pipeline for categorical data
+
+-   I will simply use one-hot encoding for categorical data without worrying about missing values.
+
+```{python}
+cat_pipeline = Pipeline([
+    ("one_hot_encoder", OneHotEncoder(sparse_output=False))
+])
+
+X_cat = cat_pipeline.fit_transform(X_train[cat_cols])
+X_cat = pd.DataFrame(X_cat, index = X_train[cat_cols].index, columns = cat_pipeline.get_feature_names_out())
+X_cat, X_cat.shape
+```
+
+# Create a pipeline for all columns combined
+
+```{python}
+preprocessing = ColumnTransformer([
+    ("cat", cat_pipeline, cat_cols),
+    ("ord", ord_pipeline, ord_cols),
+    ("num", num_pipeline, num_cols)
+])
+
+X_processed = preprocessing.fit_transform(X_train)
+X_processed = pd.DataFrame(X_processed, index = X_train.index, columns = preprocessing.get_feature_names_out())
+X_processed
+```
+
+# Create a logistic regression model
+
+```{python}
+from sklearn.linear_model import LogisticRegression
+log_reg = Pipeline([
+("pre_processing", preprocessing),
+("logistic_regression", LogisticRegression())
+])
+
+log_reg.fit(X_train, y_train)
+```
+
+```{python}
+#y_pred = log_reg.predict(X_train)
+
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+
+cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+
+scores = cross_val_score(log_reg, X_train, y_train, cv=cv, scoring='f1')
+
+# Print the scores for each fold
+print("Cross-validation scores:", scores)
+
+# Print the mean and standard deviation of the scores
+print("Mean score:", scores.mean())
+print("Standard deviation of scores:", scores.std())
+
+
+```
+
+```{python}
+#Using cross_validate
+from sklearn.model_selection import cross_validate
+cv_results = cross_validate(log_reg, X_train, y_train, cv=cv, scoring='f1', return_train_score=True)
+print("Cross-validation results:", cv_results)
+```
+
+```{python}
+from sklearn.model_selection import cross_val_predict
+y_pred = cross_val_predict(log_reg, X_train, y_train, cv = 3)
+y_pred
+```
+
+```{python}
+log_reg.n_features_in_, log_reg.classes_, log_reg["logistic_regression"].classes_
+```
+
+## Plot the confusion_matrix
+
+```{python}
+from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred, display_labels=log_reg.classes_)
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred, display_labels = log_reg["logistic_regression"].classes_, normalize="true", values_format=".2%")
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred, display_labels = log_reg["logistic_regression"].classes_, normalize="pred", values_format=".2%")
+```
+
+## Plot the precision recall curve with logistic regression model
+
+```{python}
+y_scores = cross_val_predict(log_reg, X_train,y_train, method = "predict_proba")
+y_scores
+```
+
+```{python}
+import matplotlib.pyplot as plt
+y_probs = y_scores[:, 1]
+from sklearn.metrics import precision_recall_curve
+
+precisions, recalls, thresholds = precision_recall_curve(y_train, y_probs)
+plt.plot(precisions, recalls)
+plt.xlabel("Precision")
+plt.ylabel("Recall")
+plt.grid()
+plt.legend("")
+
+```
+
+# Try to fit a random forest model
+
+```{python}
+from sklearn.ensemble import RandomForestClassifier
+forest_clf = Pipeline([
+("pre_processing", preprocessing),
+("random_forest", RandomForestClassifier(random_state=42))
+])
+
+forest_clf.fit(X_train, y_train)
+```
+
+```{python}
+cross_val_score(forest_clf, X_train, y_train, cv = 3, scoring = "f1")
+```
+
+```{python}
+y_pred = cross_val_predict(forest_clf, X_train,y_train)
+```
+
+```{python}
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred, labels = forest_clf[1].classes_)
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred, labels = forest_clf[1].classes_, normalize="true", values_format=".2%")
+```
+
+```{python}
+y_scores = cross_val_predict(forest_clf, X_train,y_train, method = "predict_proba")
+y_scores
+```
+
+```{python}
+y_probs = y_scores[:, 1]
+from sklearn.metrics import precision_recall_curve
+
+precisions, recalls, thresholds = precision_recall_curve(y_train, y_probs)
+plt.plot(precisions, recalls)
+plt.xlabel("Precision")
+plt.ylabel("Recall")
+plt.grid()
+plt.legend("")
+
+```
+
+# Change the imputation strategy
+
+```{python}
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import RobustScaler
+
+ord_pipeline = Pipeline([
+    ("convert_to_na", FunctionTransformer(func = check_special_missing, feature_names_out="one-to-one")),
+    ("fill_na", SimpleImputer(strategy='most_frequent', add_indicator = True)),
+    ("min_max_scaler", MinMaxScaler())
+    ])
+num_pipeline = Pipeline([
+    ("convert_to_na", FunctionTransformer(func = check_special_missing, feature_names_out="one-to-one")),
+    ("fill_na", SimpleImputer(strategy='median', add_indicator = True)),
+    ("standard_scaler", StandardScaler())
+])
+cat_pipeline = Pipeline([
+    ("convert_to_na", FunctionTransformer(func = check_special_missing, feature_names_out="one-to-one")),
+    ("fill_na", SimpleImputer(strategy = "most_frequent", add_indicator = True)),
+    ("one_hot_encoder", OneHotEncoder(sparse_output=False, handle_unknown="ignore"))
+])
+preprocessing = ColumnTransformer([
+    ("cat", cat_pipeline, cat_cols),
+    ("ord", ord_pipeline, ord_cols),
+    ("num", num_pipeline, num_cols)
+])
+
+```
+
+```{python}
+from sklearn.linear_model import LogisticRegression
+log_reg = Pipeline([
+("pre_processing", preprocessing),
+("logistic_regression", LogisticRegression())
+])
+
+log_reg.fit(X_train, y_train)
+
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+
+cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+
+scores = cross_val_score(log_reg, X_train, y_train, cv=cv, scoring='f1')
+
+# Print the scores for each fold
+print("Cross-validation scores:", scores)
+
+# Print the mean and standard deviation of the scores
+print("Mean score:", scores.mean())
+print("Standard deviation of scores:", scores.std())
+```
+
+```{python}
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+forest_clf = Pipeline([
+("pre_processing", preprocessing),
+("random_forest", RandomForestClassifier(random_state=42))
+])
+
+forest_clf.fit(X_train, y_train)
+
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+
+cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+
+scores = cross_val_score(forest_clf, X_train, y_train, cv=cv, scoring='f1')
+
+# Print the scores for each fold
+print("Cross-validation scores:", scores)
+
+# Print the mean and standard deviation of the scores
+print("Mean score:", scores.mean())
+print("Standard deviation of scores:", scores.std())
+
+```
+
+# Let's split the data into training and test sets, but without the columns that have more than 30% data missing
+
+```{python}
+from sklearn.model_selection import train_test_split
+
+df = df.drop(columns = cols_with_more_than_30_pct_missing_data, inplace=False)
+#df
+df_train_set, df_test_set = train_test_split(df, test_size = 0.3, random_state = 42, shuffle = True, stratify = df["CCC_095"])
+
+## Confirm stratification
+df_train_set["CCC_095"].value_counts()/df_train_set.shape[0], df_test_set["CCC_095"].value_counts()/df_test_set.shape[0], df["CCC_095"].value_counts()/df.shape[0]
+
+X_train = df_train_set.copy().drop(columns = "CCC_095", inplace = False)
+y_train = df_train_set["CCC_095"].copy()
+
+X_test = df_test_set.copy().drop(columns = "CCC_095", inplace = False)
+y_test = df_test_set["CCC_095"].copy()
+
+
+# Convert the target variable into True and False
+y_train = (y_train == 1)
+y_test = (y_test == 1)
+y_train.sum(), y_test.sum(), y_train, y_test
+```
+
+# Modified cat_cols and ord_cols
+
+```{python}
+#for item in ord_cols:
+#    print(item)
+#    ord_cols_mod = ord_cols.remove(item)
+
+
+ord_cols_mod = [item for item in ord_cols if item not in cols_with_more_than_30_pct_missing_data]
+cat_cols_mod = [item for item in cat_cols if item not in cols_with_more_than_30_pct_missing_data]
+#cols_with_more_than_60_pct_missing_data
+cat_cols_mod, ord_cols_mod
+len(cat_cols_mod), len(cat_cols), len(ord_cols_mod), len(ord_cols)
+
+```
+
+# Define pipeline and run logistic regression again
+
+```{python}
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import RobustScaler
+
+ord_pipeline = Pipeline([
+    ("convert_to_na", FunctionTransformer(func = check_special_missing, feature_names_out="one-to-one")),
+    ("fill_na", SimpleImputer(strategy='most_frequent', add_indicator = False)),
+    ("min_max_scaler", MinMaxScaler())
+    ])
+#num_pipeline = Pipeline([
+#    ("convert_to_na", FunctionTransformer(func = check_special_missing, feature_names_out="one-to-one")),
+#    ("fill_na", SimpleImputer(strategy='median', add_indicator = True)),
+#    ("standard_scaler", StandardScaler())
+#])
+cat_pipeline = Pipeline([
+    ("convert_to_na", FunctionTransformer(func = check_special_missing, feature_names_out="one-to-one")),
+    ("fill_na", SimpleImputer(strategy = "most_frequent", add_indicator = False)),
+    ("one_hot_encoder", OneHotEncoder(sparse_output=False, handle_unknown="ignore"))
+])
+preprocessing = ColumnTransformer([
+    ("cat", cat_pipeline, cat_cols_mod),
+    ("ord", ord_pipeline, ord_cols_mod)
+])
+
+log_reg = Pipeline([
+("pre_processing", preprocessing),
+("logistic_regression", LogisticRegression(class_weight="balanced"))
+])
+
+forest_clf = Pipeline([
+("pre_processing", preprocessing),
+("random_forest", RandomForestClassifier(random_state=42))
+])
+
+forest_clf1 = Pipeline([
+    ("pre_processing", preprocessing),
+    ("random_forest", RandomForestClassifier(random_state=42, class_weight="balanced"))
+])
+
+```
+
+```{python}
+log_reg.fit(X_train, y_train)
+
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+
+cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+
+scores = cross_val_score(log_reg, X_train, y_train, cv=cv, scoring='f1')
+
+# Print the scores for each fold
+print("Cross-validation scores:", scores)
+
+# Print the mean and standard deviation of the scores
+print("Mean score:", scores.mean())
+print("Standard deviation of scores:", scores.std())
+```
+
+```{python}
+y_scores = cross_val_predict(log_reg, X_train,y_train, method = "predict_proba")
+y_scores
+```
+
+```{python}
+y_probs = y_scores[:, 1]
+from sklearn.metrics import precision_recall_curve
+
+precisions, recalls, thresholds = precision_recall_curve(y_train, y_probs)
+plt.plot(precisions, recalls)
+plt.xlabel("Precision")
+plt.ylabel("Recall")
+plt.grid()
+plt.legend("")
+
+```
+
+```{python}
+y_pred = cross_val_predict(log_reg, X_train, y_train, cv = 3)
+```
+
+```{python}
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred, display_labels=log_reg.classes_)
+```
+
+```{python}
+forest_clf.fit(X_train, y_train)
+
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+
+cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+
+scores = cross_val_score(forest_clf, X_train, y_train, cv=cv, scoring='f1')
+
+# Print the scores for each fold
+print("Cross-validation scores:", scores)
+
+# Print the mean and standard deviation of the scores
+print("Mean score:", scores.mean())
+print("Standard deviation of scores:", scores.std())
+```
+
+```{python}
+y_scores = cross_val_predict(forest_clf, X_train,y_train, method = "predict_proba")
+y_scores
+```
+
+```{python}
+y_probs = y_scores[:, 1]
+from sklearn.metrics import precision_recall_curve
+
+precisions, recalls, thresholds = precision_recall_curve(y_train, y_probs)
+plt.plot(precisions, recalls)
+plt.xlabel("Precision")
+plt.ylabel("Recall")
+plt.grid()
+plt.legend("")
+
+```
+
+## Feature importances in random_forest
+
+```{python}
+feature_importances = forest_clf[1].feature_importances_
+feature_importances
+
+output = sorted(zip(feature_importances,
+           forest_clf[0].get_feature_names_out()), reverse=True)
+output
+```
+
+```{python}
+for item in zip(feature_importances, forest_clf[0].get_feature_names_out()):
+    print(item)
+```
+
+## RandomForestClassifier with balanced class weight
+```{python}
+forest_clf1.fit(X_train, y_train)
+
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+
+cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+
+scores = cross_val_score(forest_clf1, X_train, y_train, cv=cv, scoring='f1')
+
+# Print the scores for each fold
+print("Cross-validation scores:", scores)
+
+# Print the mean and standard deviation of the scores
+print("Mean score:", scores.mean())
+print("Standard deviation of scores:", scores.std())
+```
+
+
+```{python}
+y_scores = cross_val_predict(forest_clf1, X_train,y_train, method = "predict_proba")
+y_scores
+```
+
+```{python}
+y_probs = y_scores[:, 1]
+from sklearn.metrics import precision_recall_curve
+
+precisions, recalls, thresholds = precision_recall_curve(y_train, y_probs)
+plt.plot(precisions, recalls)
+plt.xlabel("Precision")
+plt.ylabel("Recall")
+plt.grid()
+plt.legend("")
+
+```
+
+
+```{python}
+y_pred = cross_val_predict(forest_clf1, X_train, y_train, cv = 3)
+```
+
+```{python}
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred)
+```
+
+```{python}
+forest_clf1.fit(X_train, y_train)
+feature_importances = forest_clf1[1].feature_importances_
+for item in sorted(zip(feature_importances, forest_clf1[0].get_feature_names_out()), reverse = True):
+    print(item)
+```
+
+# Try SVC classifier
+
+```{python}
+
+from sklearn.svm import SVC
+
+svc_clf = Pipeline([
+("pre_processing", preprocessing),
+("random_forest", SVC(class_weight = "balanced", probability=True))
+])
+```
+
+```{python}
+X_train.iloc[:5000]
+y_train[:5000].sum()
+X_train
+```
+
+```{python}
+
+svc_clf.fit(X_train.iloc[:5000], y_train[:5000])
+# This cell is taking too long to run
+cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+
+scores = cross_val_score(svc_clf, X_train.iloc[:5000], y_train[:5000], cv=cv, scoring='f1')
+
+# Print the scores for each fold
+print("Cross-validation scores:", scores)
+
+# Print the mean and standard deviation of the scores
+print("Mean score:", scores.mean())
+print("Standard deviation of scores:", scores.std())
+```
+
+```{python}
+y_scores = cross_val_predict(svc_clf, X_train.iloc[:5000],y_train[:5000], method = "predict_proba", cv = 3)
+y_scores
+```
+
+```{python}
+y_probs = y_scores[:, 1]
+from sklearn.metrics import precision_recall_curve
+
+precisions, recalls, thresholds = precision_recall_curve(y_train[:5000], y_probs)
+plt.plot(precisions, recalls)
+plt.xlabel("Precision")
+plt.ylabel("Recall")
+plt.grid()
+plt.legend("")
+```
+
+```{python}
+from sklearn.metrics import ConfusionMatrixDisplay
+y_pred = cross_val_predict(svc_clf, X_train.iloc[:5000], y_train[:5000], cv = 3)
+ConfusionMatrixDisplay.from_predictions(y_train[:5000], y_pred)
+```
+
+
+```{python}
+ConfusionMatrixDisplay.from_predictions(y_train[:5000], y_pred, normalize = "true", values_format=".2%")
+```
+
+
+```{python}
+ConfusionMatrixDisplay.from_predictions(y_train[:5000], y_pred, normalize="pred", values_format=".2%")
+```
+
+# TO DO - Try XGBoost
+
+```{python}
+from xgboost import XGBClassifier
+# XGBOOST CLASSIFIER
+xgb_clf = Pipeline([
+    ('pre_processing', preprocessing),
+    ('classifier', XGBClassifier(
+        scale_pos_weight=(y_train == False).sum() / (y_train == True).sum(),  # handles imbalance
+        use_label_encoder=False,
+        eval_metric='logloss',
+        random_state=42
+    ))
+])
+
+#xgb_pipeline.fit(X_train, y_train)
+```
+
+```{python}
+xgb_clf.fit(X_train, y_train)
+
+print(xgb_clf)
+```
+
+## Get the output from XGBoost using cross_val_predict
+- Running XGBoost inside a pipeline gives error. So I will try and use it outside a pipeline.
+
+```{python}
+!pip list
+```
+```{python}
+X_train_processed = preprocessing.fit_transform(X_train)
+X_train_processed = pd.DataFrame(X_train_processed, index = X_train.index, columns = preprocessing.get_feature_names_out())
+X_train_processed
+
+xgb_model = XGBClassifier(
+        scale_pos_weight=(y_train == False).sum() / (y_train == True).sum(),  # handles imbalance
+        use_label_encoder=False,
+        eval_metric='logloss',
+        random_state=42
+    )
+
+#xgb_model.fit()
+##cross_val_score(xgb_clf, X_train, y_train, cv = 3, scoring = "f1") # This line is giving an error.
+X = X_train_processed.copy()
+
+# Convert X and y to be compatible with Xgboost
+X = X.apply(pd.to_numeric, errors='coerce')  # convert any object columns to numeric
+assert not X.select_dtypes(include='object').any().any(), "X still has object columns"
+
+# Optional: convert bool to int in X if necessary
+X = X.astype({col: 'int' for col in X.select_dtypes(include='bool').columns})
+
+# Ensure y is 1D and numeric
+y = y_train.copy()
+y = y.astype(int)  # converts True/False to 1/0
+
+# Optional: Check shapes and types
+print(X.dtypes)
+print(y.dtype)
+print(X.shape, y.shape)
+```
+
+```{python}
+print(X.dtypes)  # look for 'object'
+print(y.unique(), y.dtype)  # should be 0 and 1, int64
+```
+
+```{python}
+xgb_model.fit(X, y)
+print("xgb model fit")
+```
+
+```{python}
+scores = cross_val_score(xgb_model, X, y, scoring='f1', cv=3)
+print("CV F1 Scores:", scores)
+```
+
+# Try imbalanced sampling strategy
+
+# Try hyperparameter tuning for random_forest, logistic_regression, XGboost
+
+# try other models - lightGBM, catBoost
+
+
+
+
+# Results so far
+
+Both the models - logistic regression and random forest seem to be really bad. The precision recall curve is falling very sharply so there is no point in trying to find a proper threshold.
+
+I wonder if this is a problem with my pre-processing or something else? Do I need to tune any of the models? I will try and tune random forest and see what happens.
+
+-   I have removed some columns that had more than 30% data missing. One had 32%, and the rest had greater than 60% data missing.This removed all the columns with numerical data.
+
+-   For the remaining columns, I am now doing misssing value imputation using most_frequent strategy and then scaling them. The ordinal variables are being scaled with MinMax Scaler.
+
+-   The performance of both logistic regressio and random forest have not improved significantly.
+
+- With the addition of the parameter class_weight = balanced, The performance of logistic regression improved dramatically. It is now giving an f1 score of 0.39 instead of 0.19. 
+- The performance of random forest has not improved with class_weight = "balanced". However, when I look at feature importances, the model is now showing features that are expected to be important at the top. This is a significant change from before where top features were not making too much sense.
+- I also tried SVC and it gives a f1 score of 0 without class_weight parameter and a score of 0.38 with class_weight = "balanced"
+- I had to try SVC with only the first 5000 training points because otherwise the kernel freezes.
+
+- The shape of the precision recall curve has not improved, though the confusion matrix has become better. The precision recall curve is falling very sharply right at the beginning.
+
+-   What to try next:
+
+    -   Other models?
+    -   Tune hyperparameters of logistic regression or random forest?
+    -   Try SVC?
+
+# Check for missing data
+
+-   Missing data is not easy to handle here since there are data missing at random and also data not missing at random because there are some questions that are skipped due to logic from previous questions. Right now, I am not handling the missing data.
+
+Since the data consist of codes as answers to questions, I went through some examples to understand which codes correspond to actual answers and which correspond to missing data or not stated or skipped or refused.
+
+-   For fields where main answers are encoded in single digit numbers, digits 6 (Valid skip),7 (Don't know),8(Refusal),9(Not stated) often correspond to missing data.
+-   For fields where main answers go up to double digits like satisfaction with life on a scale of 1-10, numbers 96 (Valid skip),97(Don't know),98(Refusal), and 99(Not stated) are used to denote missing data or data not stated.
+-   There are also some fields where numbers 999.6(valid skip) and 999.9 (not stated) or 9999.6 and 9999.9 and 996, 997, 998, 999 indicate missing values
+-   The missing codes depend on how many total values are in the category.
+
+```{python}
+import numpy as np
+
+# Check for true NaNs
+missing_nan = df.isna().sum().sort_values(ascending=False)
+missing_nan
+
+```
+
+```{python}
+
+
+def check_special_missing(df):
+    df_cleaned = df.copy()
+    missing_summary = {}
+    #max_val_list = []
+    for col in df.columns:
+        print(col)
+        if df[col].dtype in [np.float64, np.int64]:
+            unique_vals = df[col].dropna().unique()
+            #print(len(unique_vals), unique_vals)
+            if len(unique_vals) == 0:
+                continue
+            max_val = max(unique_vals)
+            #max_val_list.append(max_val)
+            #print(max_val)
+            missing_codes = []
+            # Identify the missing value codes based on magnitude
+            if max_val < 10:  # single digits (1–9)
+                missing_codes = [6, 7, 8, 9]
+            elif max_val < 100:  # double digits (01–99)
+                missing_codes = [96, 97, 98, 99]
+            elif max_val < 1000:  # triple digits (001–999)
+                missing_codes = [996, 997, 998, 999, 999.6, 999.7, 999.8, 999.9]
+            elif max_val < 10000:
+                missing_codes = [9996, 9997, 9998, 9999, 9999.90, 9999.80, 9999.70, 9999.60]
+            elif max_val < 100000:
+                missing_codes = [99996, 99997, 99998, 99999]
+            else:
+                continue
+            
+            # Count and replace
+            if missing_codes:
+                counts = {code: (df[col] == code).sum() for code in missing_codes}
+                if any(counts.values()):
+                    missing_summary[col] = counts
+                df_cleaned[col] = df_cleaned[col].replace(missing_codes, np.nan)
+
+    # Return cleaned data and summary
+    return df_cleaned, pd.DataFrame(missing_summary).T.fillna(0).astype(int)
+        
+
+#df_cleaned, missing_matrix = check_special_missing(df)
+
+#print(missing_matrix.head())
+
+```
+
+```{python}
+#df_cleaned.isna().sum().sort_values(ascending=False).values
+```
+
+# Drop the columns with greater than 40% missing data
+
+```{python}
+#missing_ratio = df_cleaned.isna().mean().sort_values(ascending=False)
+#missing_ratio
+#cols_to_drop = missing_ratio[missing_ratio > 0.4].index
+#len(cols_to_drop)
+#df_cleaned = df_cleaned.drop(columns=cols_to_drop)
+#print(f"Dropped {len(cols_to_drop)} columns. Remaining: {df_cleaned.shape[1]}")
+```
+
+# Remaining columns in the dataframe
+
+```{python}
+#df_cleaned.columns.tolist()
+#missing_ratio = df_cleaned.isna().mean().sort_values(ascending=False)
+#missing_ratio
+```
+
+# Split the data into training and test sets before further exploring the data
+
+-   We will keep 30% data in our test set. Since our classes are imbalanced, we will stratify by output variable, which is diabetes status to ensure that the classes are represented correctly.
+
+```{python}
+from sklearn.model_selection import train_test_split
+
+df_train_set, df_test_set = train_test_split(df, test_size=0.3, random_state = 42, shuffle=True, stratify = df["CCC_095"])
+```
+
+```{python}
+df_train_set["CCC_095"].value_counts(), df_test_set["CCC_095"].value_counts()
+```
+
+# Now work with the training data in the following steps
+
+```{python}
+X_train = df_train_set.copy().drop(columns = "CCC_095", inplace = False)
+y_train = df_train_set["CCC_095"].copy()
+
+X_test = df_test_set.copy().drop(columns = "CCC_095", inplace = False)
+y_test = df_test_set["CCC_095"].copy()
+X_train, y_train, X_test, y_test
+```
+
+# Now explore the training data
+
+```{python}
+X_train.columns.tolist()
+```
+
+-   ADM_RN01 = Record number in the dataset
+-   VERDATE = Date of file creation
+-   REFPER = Reference Period for the data
+-   GEOGPRV = Province of residence
+-   GEODGHR4 - Grouped health region
+-   DHH_SEX = sex at birth
+-   DHH_GMS = Grouped marital status
+-   DHHDGHSZ = Grouped household size
+-   ADM_PRX = health component completed by proxy
+-   DHHGAGE = Grouped Age
+-   DOMAC = inclusiong flag for main activity
+-   EHG2DVH3 = highest level of education
+-   DOGEN = inclusion flag general health
+-   GEN_005 = perceived health
+-   GEN_010',= Satisfaction with life in general
+-   'GEN_015', = perceived mental health
+-   'GEN_020', = perceived life stress
+-   'GEN_030 = sense of belonging to local community
+-   GENDVHDI', - perceived health - derived
+-   'GENDVMHI' - perceived mental health derived
+-   'GENDVSWL - perceived satisfaction with life derived
+-   DOHWT - inclusion flag height and weight
+-   HWT_050 = Self perceived weight
+-   HWTDGISW = BMI classification for adults aged 18 and over
+-   HWTDGBCC = BMI classification for ages 8 and over according to WHO
+-   DOCCC = Chronic condition inclusion flag
+-   DOHUI = health utility index inclusion flag
+-   DOCIH = inclusion flag for changes made to improve health
+-   DOFVC = inclusion flag for fruit and vegetable consumption
+-   DOFGU = inclusion flag for canada's food guide
+-   DOSMK = inclusion flag for smoking
+-   SMKDVSTY = smoking status type 2
+-   DOTAL = inclusion flag, tobacco products alternatives.
+-   DOETS - inclusion flag - exposure to second hand smoke
+-   DOALC - inclusion flag, alcohol use
+-   DOALW - inclusiong flag, alcohol use past week
+-   DOAMU - inclusion flag, antibiotic use
+-   DOCAN - inclusion flag, cannabis use
+-   CAN_015 = used cannabis in 12 months
+-   DOSDS = inclusion flag, severity of canabis dependence scale
+-   DODRG - drug use inclusiong flag
+-   DOPAA - inclusion flag, physical activity for adults
+-   DOPAY - physical acitivty for youth
+-   DOSBE - sedentary behaviour inclusion flag
+-   DOSXB - sexual behaviour inclusion flag
+-   DODRV - driving and safety inclusion flag
+-   DODWI - driving while under influence inclusion flag
+-   DOFLU - flu shots inclusion flag
+-   
+
+Note: the aBMI column for children aged 12-17 got dropped due to missing columns analysis above.
+
+```{python}
+df["WTS_M"]
+```
+
+# Try an analysis without missing values
+
+Remove the columns that are identifiers and that do not vary with the response
+
+## Drop columns with constant value
+
+```{python}
+# Drop columns with the same value across all rows
+nunique = X_train.nunique()
+#nunique
+constant_cols = nunique[nunique == 1].index.tolist()
+
+print(f"Removing {len(constant_cols)} constant columns.")
+X_train = X_train.drop(columns=constant_cols)
+X_test = X_test.drop(columns=constant_cols)
+```
+
+# identify numerical and categorical columns
+
+```{python}
+print(nunique[nunique > 10].sort_values(ascending = False).index)
+```
+
+Some columns are numeric = 'PAADVVOL', 'PAADVMVA', 'PAYDVAV7', 'PAYDVMNS', 'PAYDVTWK', 'PAADVTRV', 'PAADVTRA', 'FVCDVTOT', 'PAADVRCA', 'PAADVREC', 'PAADVOTH', 'PAADVOTA', 'PAYDVTTR', 'PAYDVADL', 'PAADVVIG', 'PAYDVTWN', 'PAA_050', 'PAA_020', 'PAYDVTSC', 'PAYDVTTU', 'PAYDVTWD', 'PAYDVTFR', 'PAYDVTTH'
+
+there is certainly more nuance here. There are columns that need to be treated as numerical columns. There are columns for which number of responses are too low, which need to be removed. I will need to go section by section to see what to include and what to leave out.
+
+To identify subsctions:
+
+-   Look at fields that contain inclusion flags. Their name typically starts with a string "DO"
+
+Subsections are as follows:
+
+1.  Residence location - state
+2.  Residence health region
+3.  Sex
+4.  marital Status
+5.  Household size
+6.  Age
+7.  Worked at job/business
+8.  Level of education
+9.  General Health
+10. Height and weight perceived
+11. Chronic conditions
+12. health utility index
+13. changes made to improve health
+14. fruit and vegetable consumption
+15. Canada's Food guide use
+16. smoking
+17. Tobacco product alternatives
+18. exposure to second hand smoke
+19. alcohol use
+20. alcohol use - weekly
+21. antibiotic medication use
+22. cannabis use
+23. severity of dependence on cannabis
+24. drug use
+25. Physical activity for adults
+26. physical activity for youth
+27. sendetary behaviours
+28. sexual behavious
+29. driving and safety
+30. driving while under influence
+31. flu shots
+32. blood pressure check
+33. had mammogram
+34. colorectal cancer testing
+35. consultation about mental health
+36. satisfaction with life
+37. depression
+38. suicidal thoughts and attempts
+39. social provisions
+40. primary health care
+41. medical doctor attachment
+42. contact with healthcare professionals
+43. perceived need for care
+44. patient satisfaction - community based care
+45. patient experience
+46. unmet healthcare needs
+47. working status and working hours last week
+48. socio-demographic characteristics
+49. person most knowledgeable about household
+50. health insurance coverage
+51. food security
+52. total household income
+
+Since the data for some categories are split by youth and non-youth, going ahead, I am going to analyze only adult data who have information available about diabetes status.
+
+-   I have to simplify as much as possible since the data are very complex.
+
+-   I will start with some basic characteristics and then proceed to make a more complex model later.
+
+```{python}
+df.columns.tolist()
+```

@@ -1,0 +1,10 @@
+.DS_Store
+.git
+.quarto
+.ipynb_checkpoints
+data
+2019-2020_CSV*
+2025-05-13
+Dig*
+lpr_000*
+*.quarto_ipynb
