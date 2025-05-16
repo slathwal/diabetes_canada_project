@@ -1,0 +1,211 @@
+---
+title: "Improve performance of baseline models"
+author: Shefali Lathwal
+date: "2025-05-16"
+date-modified: last-modified
+format: html
+toc: true
+echo: true
+jupyter: python3
+---
+
+# Import required libraries
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+```
+
+# Import and prepare the data
+- The data consist of 108,252 rows and 691 columns.
+```{python}
+df = pd.read_csv("/Users/shefalilathwal/Documents/diabetes_canada_project/data/pumf_cchs.csv")
+print(df.shape)
+col_list = df.columns.tolist()
+print(col_list)
+
+# Only keeping rows with a known diabetes status
+#Codes 9, 7, and 8 are for either refusing to disclose diabetes status, or not knowing or not stated. I should only keep the rows with known diabetes status.
+
+df = df[df["CCC_095"].isin([1.0, 2.0])]
+print(df["CCC_095"].value_counts())
+
+# Only keeping rows for adults - removing code = 1
+df = df[~(df["DHHGAGE"] == 1)]
+print(df["DHHGAGE"].value_counts())
+
+# From manual analysis of the data, I identified important columns and the types of each column
+cols_to_keep = ["GEOGPRV", "DHH_SEX", "DHHGMS", "DHHDGHSZ", "DHHGAGE","EHG2DVH3","GENDVHDI", "GENDVMHI", "GENDVSWL","HWTDGISW", "CCC_035", "CCC_065", "CCC_070", "CCC_075", "CCC_080", "CCC_095", "CCC_185", "CCC_195", "CCC_200","CCCDGRSP", "CCCDGSKL", "CCCDGCAR","HUIDGHSI", "HUIDGPAD", "SMKDVSTY", "SMKDGYCS","SMKDGSTP","ETS_005","ALCDVTTM", "ALWDVWKY", "ALWDVDLY","CAN_015","SDS_005","DRGDVYA","DRGDVLA","PAADVTRV", "PAADVREC", "PAADVOTH", "PAADVMVA", "PAADVVIG","PAADVVOL", "LBFDGHPW", "SDC_015","SDCDGCB","SDCDVIMM","SDCDVFLA","INCDGHH"]
+
+ord_cols = ["EHG2DVH3","GENDVHDI","GENDVMHI", "GENDVSWL","SMKDGYCS","SMKDGSTP", "INCDGHH"]
+num_cols = ["ALWDVWKY","ALWDVDLY", "PAADVTRV", "PAADVREC","PAADVOTH","PAADVMVA" , "PAADVVIG","PAADVVOL","LBFDGHPW"]
+cat_cols = ["GEOGPRV","DHH_SEX", "DHHGMS","DHHDGHSZ","DHHGAGE","HWTDGISW","CCC_035", "CCC_065", "CCC_070", "CCC_075", "CCC_080", "CCC_185", "CCC_195", "CCC_200","CCCDGRSP", "CCCDGSKL", "CCCDGCAR","HUIDGHSI", "HUIDGPAD","SMKDVSTY","ETS_005","ALCDVTTM", "CAN_015", "SDS_005","DRGDVYA","DRGDVLA","SDC_015","SDCDGCB","SDCDVIMM","SDCDVFLA"]
+target_col = ["CCC_095"]
+
+print(len(cols_to_keep) == len(ord_cols+num_cols+cat_cols+target_col))
+
+# Only keep the important columns in the data
+df = df[cols_to_keep]
+print(df.shape)
+```
+
+# Define a function to deal with the missing data and remove columns with a large fraction of data missing
+- Missing data is encoded as numerical codes, so we define a function to deal with these codes. the function will be used later in data pre-processing.
+- I will also use the function to check the missing values in all included columns and remove the ones that have more than a certain percentage of data missing.
+
+```{python}
+
+# Step1:  convert_missing_codes to na
+
+def check_special_missing(df):
+    df_cleaned = df.copy()
+    missing_summary = {}
+    #max_val_list = []
+    for col in df.columns:
+        #print(col)
+        if df[col].dtype in [np.float64, np.int64]:
+            unique_vals = df[col].dropna().unique()
+            #print(len(unique_vals), unique_vals)
+            if len(unique_vals) == 0:
+                continue
+            max_val = max(unique_vals)
+            #max_val_list.append(max_val)
+            #print(max_val)
+            missing_codes = []
+            # Identify the missing value codes based on magnitude
+            if max_val < 10:  # single digits (1–9)
+                missing_codes = [6, 7, 8, 9]
+            elif max_val < 100:  # double digits (01–99)
+                missing_codes = [96, 97, 98, 99]
+            elif max_val < 1000:  # triple digits (001–999)
+                missing_codes = [996, 997, 998, 999, 999.6, 999.7, 999.8, 999.9]
+            elif max_val < 10000:
+                missing_codes = [9996, 9997, 9998, 9999, 9999.90, 9999.80, 9999.70, 9999.60]
+            elif max_val < 100000:
+                missing_codes = [99996, 99997, 99998, 99999]
+            else:
+                continue
+            
+            # Count and replace
+            if missing_codes:
+                counts = {code: (df[col] == code).sum() for code in missing_codes}
+                if any(counts.values()):
+                    missing_summary[col] = counts
+                df_cleaned[col] = df_cleaned[col].replace(missing_codes, np.nan)
+
+    # Return cleaned data and summary
+    return df_cleaned
+
+cols_with_more_than_60_pct_missing_data = num_cols+["SMKDGYCS", "SMKDGSTP"]+["SDS_005","DRGDVYA","DRGDVLA"]
+print(cols_with_more_than_60_pct_missing_data)
+cols_with_more_than_30_pct_missing_data = num_cols+["SMKDGYCS", "SMKDGSTP"]+["ETS_005","SDS_005","DRGDVYA","DRGDVLA"]
+print(cols_with_more_than_30_pct_missing_data)
+
+# only keep the data from columns that have less than 30% data missing
+
+df = df.drop(columns = cols_with_more_than_30_pct_missing_data, inplace=False)
+
+# Modify variables containing names of categorical and ordinal variables 
+
+ord_cols_mod = [item for item in ord_cols if item not in cols_with_more_than_30_pct_missing_data]
+cat_cols_mod = [item for item in cat_cols if item not in cols_with_more_than_30_pct_missing_data]
+len(cat_cols_mod), len(cat_cols), len(ord_cols_mod), len(ord_cols)
+```
+
+# Split the data into training and testing sets
+
+```{python}
+df_train_set, df_test_set = train_test_split(df, test_size = 0.3, random_state = 42, shuffle = True, stratify = df["CCC_095"])
+
+## Confirm stratification
+print(df_train_set["CCC_095"].value_counts()/df_train_set.shape[0], df_test_set["CCC_095"].value_counts()/df_test_set.shape[0], df["CCC_095"].value_counts()/df.shape[0])
+
+X_train = df_train_set.copy().drop(columns = "CCC_095", inplace = False)
+y_train = df_train_set["CCC_095"].copy()
+
+X_test = df_test_set.copy().drop(columns = "CCC_095", inplace = False)
+y_test = df_test_set["CCC_095"].copy()
+
+
+# Convert the target variable into True and False
+y_train = (y_train == 1)
+y_test = (y_test == 1)
+y_train.sum(), y_test.sum(), y_train, y_test
+
+```
+
+
+# Run XGBoost on the data
+```{python}
+from xgboost import XGBClassifier
+# XGBOOST CLASSIFIER
+xgb_clf = Pipeline([
+    ('pre_processing', preprocessing),
+    ('classifier', XGBClassifier(
+        scale_pos_weight=(y_train == False).sum() / (y_train == True).sum(),  # handles imbalance
+        use_label_encoder=False,
+        eval_metric='logloss',
+        random_state=42
+    ))
+])
+
+#xgb_pipeline.fit(X_train, y_train)
+```
+
+```{python}
+xgb_clf.fit(X_train, y_train)
+
+print(xgb_clf)
+```
+
+## Get the output from XGBoost using cross_val_predict
+- Running XGBoost inside a pipeline gives error. So I will try and use it outside a pipeline.
+
+```{python}
+X_train_processed = preprocessing.fit_transform(X_train)
+X_train_processed = pd.DataFrame(X_train_processed, index = X_train.index, columns = preprocessing.get_feature_names_out())
+X_train_processed
+
+xgb_model = XGBClassifier(
+        scale_pos_weight=(y_train == False).sum() / (y_train == True).sum(),  # handles imbalance
+        use_label_encoder=False,
+        eval_metric='logloss',
+        random_state=42
+    )
+
+#xgb_model.fit()
+##cross_val_score(xgb_clf, X_train, y_train, cv = 3, scoring = "f1") # This line is giving an error.
+X = X_train_processed.copy()
+
+# Convert X and y to be compatible with Xgboost
+X = X.apply(pd.to_numeric, errors='coerce')  # convert any object columns to numeric
+assert not X.select_dtypes(include='object').any().any(), "X still has object columns"
+
+# Optional: convert bool to int in X if necessary
+X = X.astype({col: 'int' for col in X.select_dtypes(include='bool').columns})
+
+# Ensure y is 1D and numeric
+y = y_train.copy()
+y = y.astype(int)  # converts True/False to 1/0
+
+# Optional: Check shapes and types
+print(X.dtypes)
+print(y.dtype)
+print(X.shape, y.shape)
+```
+
+```{python}
+print(X.dtypes)  # look for 'object'
+print(y.unique(), y.dtype)  # should be 0 and 1, int64
+```
+
+```{python}
+xgb_model.fit(X, y)
+print("xgb model fit")
+```
+
+```{python}
+scores = cross_val_score(xgb_model, X, y, scoring='f1', cv=3)
+print("CV F1 Scores:", scores)
+```

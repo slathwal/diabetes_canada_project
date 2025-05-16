@@ -409,6 +409,56 @@ df_output = scaler.fit_transform(df_test)
 df_output
 ```
 
+# Define a function to deal with the missing data
+
+```{python}
+
+# Step1:  convert_missing_codes to na
+
+def check_special_missing(df):
+    df_cleaned = df.copy()
+    missing_summary = {}
+    #max_val_list = []
+    for col in df.columns:
+        #print(col)
+        if df[col].dtype in [np.float64, np.int64]:
+            unique_vals = df[col].dropna().unique()
+            #print(len(unique_vals), unique_vals)
+            if len(unique_vals) == 0:
+                continue
+            max_val = max(unique_vals)
+            #max_val_list.append(max_val)
+            #print(max_val)
+            missing_codes = []
+            # Identify the missing value codes based on magnitude
+            if max_val < 10:  # single digits (1–9)
+                missing_codes = [6, 7, 8, 9]
+            elif max_val < 100:  # double digits (01–99)
+                missing_codes = [96, 97, 98, 99]
+            elif max_val < 1000:  # triple digits (001–999)
+                missing_codes = [996, 997, 998, 999, 999.6, 999.7, 999.8, 999.9]
+            elif max_val < 10000:
+                missing_codes = [9996, 9997, 9998, 9999, 9999.90, 9999.80, 9999.70, 9999.60]
+            elif max_val < 100000:
+                missing_codes = [99996, 99997, 99998, 99999]
+            else:
+                continue
+            
+            # Count and replace
+            if missing_codes:
+                counts = {code: (df[col] == code).sum() for code in missing_codes}
+                if any(counts.values()):
+                    missing_summary[col] = counts
+                df_cleaned[col] = df_cleaned[col].replace(missing_codes, np.nan)
+
+    # Return cleaned data and summary
+    return df_cleaned
+
+
+```
+
+
+
 # Explore numerical columns
 
 ```{python}
@@ -477,52 +527,6 @@ For ordinal and numerical columns, I need to deal with codes for missing data. F
 -   I want to change the codes to -1 and then proceed. Let's see how it goes.
 
 For numerical data: - I also want to scale the data, but missing values should not be included in scaling.
-
-```{python}
-
-# Step1:  convert_missing_codes to na
-
-def check_special_missing(df):
-    df_cleaned = df.copy()
-    missing_summary = {}
-    #max_val_list = []
-    for col in df.columns:
-        #print(col)
-        if df[col].dtype in [np.float64, np.int64]:
-            unique_vals = df[col].dropna().unique()
-            #print(len(unique_vals), unique_vals)
-            if len(unique_vals) == 0:
-                continue
-            max_val = max(unique_vals)
-            #max_val_list.append(max_val)
-            #print(max_val)
-            missing_codes = []
-            # Identify the missing value codes based on magnitude
-            if max_val < 10:  # single digits (1–9)
-                missing_codes = [6, 7, 8, 9]
-            elif max_val < 100:  # double digits (01–99)
-                missing_codes = [96, 97, 98, 99]
-            elif max_val < 1000:  # triple digits (001–999)
-                missing_codes = [996, 997, 998, 999, 999.6, 999.7, 999.8, 999.9]
-            elif max_val < 10000:
-                missing_codes = [9996, 9997, 9998, 9999, 9999.90, 9999.80, 9999.70, 9999.60]
-            elif max_val < 100000:
-                missing_codes = [99996, 99997, 99998, 99999]
-            else:
-                continue
-            
-            # Count and replace
-            if missing_codes:
-                counts = {code: (df[col] == code).sum() for code in missing_codes}
-                if any(counts.values()):
-                    missing_summary[col] = counts
-                df_cleaned[col] = df_cleaned[col].replace(missing_codes, np.nan)
-
-    # Return cleaned data and summary
-    return df_cleaned
-
-
-```
 
 # Make a pre-processing pipeline for ordinal variables
 
@@ -1109,83 +1113,7 @@ ConfusionMatrixDisplay.from_predictions(y_train[:5000], y_pred, normalize = "tru
 ConfusionMatrixDisplay.from_predictions(y_train[:5000], y_pred, normalize="pred", values_format=".2%")
 ```
 
-# TO DO - Try XGBoost
-
-```{python}
-from xgboost import XGBClassifier
-# XGBOOST CLASSIFIER
-xgb_clf = Pipeline([
-    ('pre_processing', preprocessing),
-    ('classifier', XGBClassifier(
-        scale_pos_weight=(y_train == False).sum() / (y_train == True).sum(),  # handles imbalance
-        use_label_encoder=False,
-        eval_metric='logloss',
-        random_state=42
-    ))
-])
-
-#xgb_pipeline.fit(X_train, y_train)
-```
-
-```{python}
-xgb_clf.fit(X_train, y_train)
-
-print(xgb_clf)
-```
-
-## Get the output from XGBoost using cross_val_predict
-- Running XGBoost inside a pipeline gives error. So I will try and use it outside a pipeline.
-
-```{python}
-!pip list
-```
-```{python}
-X_train_processed = preprocessing.fit_transform(X_train)
-X_train_processed = pd.DataFrame(X_train_processed, index = X_train.index, columns = preprocessing.get_feature_names_out())
-X_train_processed
-
-xgb_model = XGBClassifier(
-        scale_pos_weight=(y_train == False).sum() / (y_train == True).sum(),  # handles imbalance
-        use_label_encoder=False,
-        eval_metric='logloss',
-        random_state=42
-    )
-
-#xgb_model.fit()
-##cross_val_score(xgb_clf, X_train, y_train, cv = 3, scoring = "f1") # This line is giving an error.
-X = X_train_processed.copy()
-
-# Convert X and y to be compatible with Xgboost
-X = X.apply(pd.to_numeric, errors='coerce')  # convert any object columns to numeric
-assert not X.select_dtypes(include='object').any().any(), "X still has object columns"
-
-# Optional: convert bool to int in X if necessary
-X = X.astype({col: 'int' for col in X.select_dtypes(include='bool').columns})
-
-# Ensure y is 1D and numeric
-y = y_train.copy()
-y = y.astype(int)  # converts True/False to 1/0
-
-# Optional: Check shapes and types
-print(X.dtypes)
-print(y.dtype)
-print(X.shape, y.shape)
-```
-
-```{python}
-print(X.dtypes)  # look for 'object'
-print(y.unique(), y.dtype)  # should be 0 and 1, int64
-```
-
-```{python}
-xgb_model.fit(X, y)
-print("xgb model fit")
-```
-
-```{python}
-scores = cross_val_score(xgb_model, X, y, scoring='f1', cv=3)
-print("CV F1 Scores:", scores)
-```
+# TO DO - Try XGBoost (Not working - I will try it in a different notebook.)
 
 # Try imbalanced sampling strategy
 
@@ -1214,6 +1142,8 @@ I wonder if this is a problem with my pre-processing or something else? Do I nee
 - I had to try SVC with only the first 5000 training points because otherwise the kernel freezes.
 
 - The shape of the precision recall curve has not improved, though the confusion matrix has become better. The precision recall curve is falling very sharply right at the beginning.
+
+- I am unable to get XGBoost to work. Will try it in the next notebook
 
 -   What to try next:
 
