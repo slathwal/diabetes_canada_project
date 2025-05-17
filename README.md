@@ -26,6 +26,7 @@ This project explores and builds a predictive model for identifying individuals 
         - Remove features that have low variance - no features with low variance
         - Remove features that are highly correlated - TO DO
             - Looked at what measures of correlation to use for ordinal and categorical/nominal data.
+        - Peform automated feature selection - TO DO
     - Error Analysis - TO DO
     - Look at learning curves on training and validation data - TO DO
     - Try combining models to improve performance - TO DO
