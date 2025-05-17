@@ -18,4 +18,15 @@ This project explores and builds a predictive model for identifying individuals 
         - Tried Logistic Regression, SVC and RandomForest
 
 2. **Improving the model(s)**
-    - In progress
+    - So far (2025/05/17) the performance of linear models (Logistic Regression) is similar to more complex models (RandomForest and XGBoost) 
+    - Fine-tuning the models:
+        - Tried XGBoost, RandomForest, LogisticRegression - the performance of RandomForest improved with finetuning, reaching an f1 score of 0.42
+    - Better data pre-processing
+        - Treat ordinal features as categorical - no change
+        - Remove features that have low variance - no features with low variance
+        - Remove features that are highly correlated - TO DO
+            - Looked at what measures of correlation to use for ordinal and categorical/nominal data.
+    - Error Analysis - TO DO
+    - Look at learning curves on training and validation data - TO DO
+    - Try combining models to improve performance - TO DO
+   
