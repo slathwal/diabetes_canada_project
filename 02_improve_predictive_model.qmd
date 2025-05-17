@@ -727,3 +727,11 @@ print(classification_report(y_test, y_pred_stack))
 
 # Try resampling - Not Working
 - Resampling strategy with SMOTE is leading to crash of the jupyter kernel and is not a good idea.
+
+# How to know if model has reached its limit?
+- Error analysis - What kind of errors are being made?
+- Compare linear and non-linear models. If the performance is similar, then there may not be a lot of non-linearity
+- Plot training and validation score vs dataset size.
+    - If both curves plateau → you're likely at the model’s limit
+    - If validation score is increasing → more data might help
+    - If large gap → model is overfitting → regularization, simplification, or more data might help
