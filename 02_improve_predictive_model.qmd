@@ -21,6 +21,15 @@ from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from xgboost import XGBClassifier
 from sklearn.metrics import ConfusionMatrixDisplay, precision_recall_curve
+from sklearn.metrics import f1_score, classification_report, confusion_matrix
+from imblearn.over_sampling import SMOTE
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from sklearn.linear_model import LogisticRegression
+#from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+#from sklearn.ensemble import StackingClassifier
+from sklearn.base import clone
+
 ```
 
 # Import and prepare the data
@@ -153,7 +162,7 @@ ord_pipeline = Pipeline([
 cat_pipeline = Pipeline([
     ("convert_to_na", FunctionTransformer(func = check_special_missing, feature_names_out="one-to-one")),
     ("fill_na", SimpleImputer(strategy = "most_frequent", add_indicator = False)),
-    ("one_hot_encoder", OneHotEncoder(sparse_output=False, handle_unknown="ignore"))
+    ("one_hot_encoder", OneHotEncoder(sparse_output=False, handle_unknown="ignore", drop = "first"))
 ])
 
 preprocessing = ColumnTransformer([
@@ -218,3 +227,310 @@ plt.legend("")
 
 # Notes:
 - Running XGBClassifier inside a pipeline and inside the function cross_val_score was giving an error for a long time. In the end, I upgraded the versions of xgboost and scikit-learn and the error disappeared. However, the performance of the XGBClassifier is same as logistic regression and SVC, an f1 score of 0.39
+
+
+# Try tuning the XgBoost algorithm
+
+```{python}
+# Define parameter grid for XGBoost
+xgb_params = {
+    'classifier__n_estimators': [100, 200, 300],
+    'classifier__max_depth': [3, 5, 7],
+    'classifier__learning_rate': [0.01, 0.1, 0.2],
+    'classifier__subsample': [0.7, 0.8, 1.0],
+    'classifier__colsample_bytree': [0.7, 0.8, 1.0]
+}
+
+xgb_search = RandomizedSearchCV(
+    xgb_clf,
+    xgb_params,
+    n_iter=20,
+    cv=5,
+    scoring='f1',
+    verbose=1,
+    random_state=42,
+    n_jobs=-1
+)
+
+xgb_search.fit(X_train, y_train)
+
+print("🔧 Best XGBoost Parameters:")
+print(xgb_search.best_params_)
+
+# Evaluate best model
+xgb_best = xgb_search.best_estimator_
+
+```
+
+```{python}
+xgb_best
+```
+
+```{python}
+y_pred_xgb_best = cross_val_predict(xgb_best, X_train, y_train, cv=3)
+print("F1 Score:", f1_score(y_train, y_pred_xgb_best))
+print(classification_report(y_train, y_pred_xgb_best))
+
+y_pred = cross_val_predict(xgb_best, X_train, y_train, cv = 3, method = "predict_proba")
+y_pred
+
+y_probs = y_pred[:, 1]
+precisions, recalls, thresholds = precision_recall_curve(y_train, y_probs)
+plt.plot(precisions, recalls)
+plt.xlabel("Precision")
+plt.ylabel("Recall")
+plt.grid()
+plt.legend("")
+```
+
+
+# Tune Logistic Regression
+```{python}
+# 2. Logistic Regression
+lr = LogisticRegression(class_weight='balanced', solver='liblinear', random_state=42)
+
+log_reg = Pipeline([
+("pre_processing", preprocessing),
+("logistic_regression", lr)
+])
+
+lr_params = {
+    'logistic_regression__penalty': ['l1', 'l2'],
+    'logistic_regression__C': [0.01, 0.1, 1, 10]
+}
+lr_search = RandomizedSearchCV(log_reg, lr_params, scoring='f1', n_iter=8, cv=5, random_state=42, n_jobs=-1)
+lr_search.fit(X_train, y_train)
+```
+
+```{python}
+log_reg_best = lr_search.best_estimator_
+print(lr_search.best_params_)
+cv_res = pd.DataFrame(lr_search.cv_results_)
+cv_res.sort_values(by="mean_test_score", ascending=False, inplace=True)
+cv_res
+```
+
+```{python}
+y_score = cross_val_predict(log_reg_best, X_train, y_train, cv=5, method = "predict_proba")
+y_score
+```
+
+```{python}
+#y_pred = (y_score[:, 1] > 0.5)
+precisions, recalls, thresholds = precision_recall_curve(y_train, y_score[:, 1])
+plt.plot(precisions, recalls)
+plt.xlabel("Precision")
+plt.ylabel("Recall")
+plt.grid()
+plt.legend("")
+```
+
+- Tuning the linear regression model, it is clear that there is not much improvement in the model. All f1 scores are close to 0.39
+
+# Try tuning the random forest model
+
+```{python}
+rf = RandomForestClassifier(class_weight='balanced', random_state=42)
+forest_clf = Pipeline([
+("pre_processing", preprocessing),
+("classifier", rf)
+])
+
+
+rf_params = {
+    'classifier__n_estimators': [100, 200, 300],
+    'classifier__max_depth': [5, 10, 20, None],
+    'classifier__min_samples_split': [2, 5],
+    'classifier__min_samples_leaf': [1, 2, 4]
+}
+rf_search = RandomizedSearchCV(forest_clf, rf_params, scoring='f1', n_iter=10, cv=5, random_state=42, n_jobs=-1)
+rf_search.fit(X_train, y_train)
+```
+
+```{python}
+forest_clf_best = rf_search.best_estimator_
+print(rf_search.best_params_)
+cv_res = pd.DataFrame(rf_search.cv_results_)
+cv_res.sort_values(by="mean_test_score", ascending=False, inplace=True)
+cv_res
+```
+
+The performance of RandomForest improved a lot with tuning! increasing from 0.13 to 0.42
+
+```{python}
+y_score = cross_val_predict(forest_clf_best, X_train, y_train, cv=5, method = "predict_proba")
+y_score
+```
+
+```{python}
+precisions, recalls, thresholds = precision_recall_curve(y_train, y_score[:, 1])
+plt.plot(precisions, recalls)
+plt.xlabel("Precision")
+plt.ylabel("Recall")
+plt.grid()
+plt.legend("")
+```
+
+The precision recall curve does not look great, but let's look at the confusion matrix
+```{python}
+ConfusionMatrixDisplay.from_predictions(y_train, (y_score[:,1]>0.5), display_labels=forest_clf_best[1].classes_)
+print(classification_report(y_train, (y_score[:,1]>0.5)))
+```
+
+Look at which features are the most important in the random forest algorithm
+```{python}
+feature_importances = forest_clf_best[1].feature_importances_
+feature_importances
+for item in sorted(zip(feature_importances, forest_clf_best[0].get_feature_names_out()), reverse = True):
+    print(item)
+```
+
+# Try removing unimportant features
+
+Best parameters for random_forest are as follows:
+{'classifier__n_estimators': 300,
+ 'classifier__min_samples_split': 2,
+ 'classifier__min_samples_leaf': 4,
+ 'classifier__max_depth': 20}
+```{python}
+#rf = RandomForestClassifier(class_weight='balanced', random_state=42,
+#n_estimators=300, min_samples_split=2, min_samples_leaf=4,max_depth=20)
+#forest_clf = Pipeline([
+#("pre_processing", preprocessing),
+#("classifier", rf)
+#])
+forest_clf_best = rf_search.best_estimator_
+
+importances = pd.Series(forest_clf_best[1].feature_importances_, index=forest_clf_best[0].get_feature_names_out())
+importances.sort_values(ascending=False).plot(kind='bar', figsize=(12, 6))
+plt.title("Feature Importances from Random Forest")
+plt.show()
+```
+
+## Reduce the data
+```{python}
+threshold = 0.01
+important_features = importances[importances > threshold].index
+important_features
+# Identify which original features to keep
+#important_ohe_features = [f for f in important_features if f in ohe_feature_names]
+#important_numerical_features = [f for f in important_features if f in numerical_cols]
+
+# Map OHE features back to original categorical columns
+#important_cols = set()
+for f in important_features:
+    print(f)
+    original_col = f.split('__')[1]
+    print(original_col)
+    #important_cols.add(original_col)
+important_cols = ["GEOGPRV","DHH_SEX","DHHGMS","DHHDGHSZ","DHHGAGE","HWTDGISW","CCC_065","CCC_070","CCC_075","CCC_080","CCCDGSKL","CCCDGCAR","SMKDVSTY","ALCDVTTM","EHG2DVH3","GENDVHDI","GENDVMHI","INCDGHH","CCC_035","HUIDGHSI","HUIDGPAD","CAN_015","GENDVSWL"]
+
+X_train_reduced = X_train[important_cols]
+X_test_reduced = X_test[important_cols]
+```
+
+```{python}
+X_train_reduced.columns.tolist(), y_train
+ord_cols_reduced = [item for item in ord_cols_mod if item in important_cols]
+cat_cols_reduced = [item for item in cat_cols_mod if item in important_cols]
+```
+
+## Retrain model on reduced data
+```{python}
+reduced_preprocessing_pipeline = ColumnTransformer([
+    ("cat", cat_pipeline, cat_cols_reduced),
+    ("ord", ord_pipeline, ord_cols_reduced)
+])
+
+rf = RandomForestClassifier(class_weight='balanced', random_state=42)
+forest_clf_reduced = Pipeline([
+    ("pre_processing", reduced_preprocessing_pipeline),
+    ("classifier", rf)
+])
+```
+
+```{python}
+print("Original number of features:", X_train.shape[1])
+print("Reduced number of features:", X_train_reduced.shape[1])
+
+rf_params = {
+    'classifier__n_estimators': [100, 200, 300],
+    'classifier__max_depth': [5, 10, 20, None],
+    'classifier__min_samples_split': [2, 5],
+    'classifier__min_samples_leaf': [1, 2, 4]
+}
+rf_reduced_search = RandomizedSearchCV(forest_clf_reduced, rf_params, scoring='f1', n_iter=10, cv=5, random_state=42, n_jobs=-1)
+rf_reduced_search.fit(X_train_reduced, y_train)
+
+```
+
+```{python}
+forest_clf_reduced_best = rf_reduced_search.best_estimator_
+print(rf_reduced_search.best_params_)
+cv_res = pd.DataFrame(rf_reduced_search.cv_results_)
+cv_res.sort_values(by="mean_test_score", ascending=False, inplace=True)
+cv_res
+```
+
+After dropping the additional variables, I am still getting an f1 score of 0.42
+
+# Is the way i am doing on-hot encoding wrong? If My column has two variables, I should get only one one-hot encoded column, but I am getting two.
+- According to introduction to statistical learning - yes. I should keep only one value for a categorical column with two values. This can be done by setting the argument drop = True in OneHotEncoder()
+- After I fixed the one-hot encoding, the final f1score did not improve much, but I am getting a few more columns in the important columns list.
+
+
+# Try stacking classifiers - Not working right now
+```{python}
+
+
+stacking_clf = StackingClassifier(
+    estimators=[
+        ('rf', rf_search.best_estimator_),
+        ('lr', lr_search.best_estimator_),
+        ('xgb', xgb_search.best_estimator_)
+    ],
+    final_estimator=LogisticRegression(),
+    n_jobs=1
+)
+
+original_columns = X_train.columns.tolist()
+def make_dataframe_transformer(column_names):
+    def ensure_dataframe(X):
+        import pandas as pd
+        if isinstance(X, pd.DataFrame):
+            return X
+        else:
+            return pd.DataFrame(X, columns=column_names)
+    return FunctionTransformer(ensure_dataframe, feature_names_out="one-to-one")
+df_transformer = make_dataframe_transformer(original_columns)
+
+stacking_pipeline = Pipeline([
+    ("ensure_df", df_transformer),
+    ("preprocessing", preprocessing),
+    ("classifier", stacking_clf)
+])
+
+#stacking_pipeline = Pipeline([
+#    ("pre_processing", preprocessing),
+#    ("classifier", stacking_clf)
+#])
+
+```
+
+```{python}
+stacking_score = cross_val_score(stacking_pipeline, X_train, y_train, cv = 3, scoring = "f1", n_jobs=1) # n_jobs = 1 is to serialize and avoid parallelization
+stacking_score
+```
+
+```{python}
+y_pred_stack = cross_val_predict(stacking_pipeline, X_train, y_train, cv = 3)
+print("\n🔗 Stacking Classifier Performance:")
+print("F1 Score:", f1_score(y_test, y_pred_stack))
+print(classification_report(y_test, y_pred_stack))
+```
+
+
+
+
+# Try resampling - Not Working
+- Resampling strategy with SMOTE is leading to crash of the jupyter kernel and is not a good idea.
