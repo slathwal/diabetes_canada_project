@@ -29,6 +29,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 #from sklearn.ensemble import StackingClassifier
 from sklearn.base import clone
+import seaborn as sns
+from sklearn.feature_selection import VarianceThreshold
 
 ```
 
@@ -350,6 +352,11 @@ rf_search.fit(X_train, y_train)
 ```{python}
 forest_clf_best = rf_search.best_estimator_
 print(rf_search.best_params_)
+```
+
+```{python}
+forest_clf_best = rf_search.best_estimator_
+print(rf_search.best_params_)
 cv_res = pd.DataFrame(rf_search.cv_results_)
 cv_res.sort_values(by="mean_test_score", ascending=False, inplace=True)
 cv_res
@@ -474,10 +481,196 @@ cv_res
 
 After dropping the additional variables, I am still getting an f1 score of 0.42
 
+# Re-tune the RandomForest model
+Best parameters are: 
+{'classifier__n_estimators': 300,
+ 'classifier__min_samples_split': 2,
+ 'classifier__min_samples_leaf': 4,
+ 'classifier__max_depth': 20}
+
+ Out of the chosen parameters, 3 are the maximum values given. Therefore, I should try more values for those.
+
+
+
+
+```{python}
+rf = RandomForestClassifier(class_weight='balanced', random_state=42)
+forest_clf = Pipeline([
+("pre_processing", preprocessing),
+("classifier", rf)
+])
+
+
+rf_params_2 = {
+    'classifier__n_estimators': [300, 400, 500],
+    'classifier__max_depth': [20,25,30,40],
+    'classifier__min_samples_split': [2,5],
+    'classifier__min_samples_leaf': [4, 6, 8]
+}
+
+
+
+rf_search_2 = RandomizedSearchCV(forest_clf, rf_params_2, scoring='f1', n_iter=10, cv=5, random_state=42, n_jobs=-1)
+rf_search_2.fit(X_train, y_train)
+```
+
+```{python}
+forest_clf_best = rf_search_2.best_estimator_
+print(rf_search_2.best_params_)
+cv_res = pd.DataFrame(rf_search_2.cv_results_)
+cv_res.sort_values(by="mean_test_score", ascending=False, inplace=True)
+cv_res
+```
+
+ New ones came out to be the following:
+ {'classifier__n_estimators': 300, 'classifier__min_samples_split': 2, 'classifier__min_samples_leaf': 4, 'classifier__max_depth': 40}
+Try tuning a 3rd time
+```{python}
+rf_params_3 = {
+    'classifier__n_estimators': [300],
+    'classifier__max_depth': [40, 60, 80, 100],
+    'classifier__min_samples_split': [2,4],
+    'classifier__min_samples_leaf': [4, 6, 8]
+}
+rf_search_3 = RandomizedSearchCV(forest_clf, rf_params_3, scoring='f1', n_iter=10, cv=5, random_state=42, n_jobs=-1)
+rf_search_3.fit(X_train, y_train)
+```
+
+```{python}
+forest_clf_best = rf_search_3.best_estimator_
+print(rf_search_3.best_params_)
+cv_res = pd.DataFrame(rf_search_3.cv_results_)
+cv_res.sort_values(by="mean_test_score", ascending=False, inplace=True)
+cv_res
+```
+
+Final params:
+
+{'classifier__n_estimators': 300, 'classifier__min_samples_split': 2, 'classifier__min_samples_leaf': 4, 'classifier__max_depth': 40}
+
+
 # Is the way i am doing on-hot encoding wrong? If My column has two variables, I should get only one one-hot encoded column, but I am getting two.
 - According to introduction to statistical learning - yes. I should keep only one value for a categorical column with two values. This can be done by setting the argument drop = True in OneHotEncoder()
-- After I fixed the one-hot encoding, the final f1score did not improve much, but I am getting a few more columns in the important columns list.
+- After I fixed the one-hot encoding, the final f1 score did not improve much, but I am getting a few more columns in the important columns list.
 
+
+# Try One-hot Encoding for all variables, even the ordinal ones
+```{python}
+cat_preprocessing_pipeline = ColumnTransformer([
+    ("cat", cat_pipeline, cat_cols_mod+ord_cols_mod)
+])
+
+rf = RandomForestClassifier(class_weight='balanced', random_state=42)
+forest_clf_cat = Pipeline([
+    ("pre_processing", cat_preprocessing_pipeline),
+    ("classifier", rf)
+])
+```
+
+```{python}
+rf_params = {
+    'classifier__n_estimators': [100, 200, 300],
+    'classifier__max_depth': [5, 10, 20, None],
+    'classifier__min_samples_split': [2, 5],
+    'classifier__min_samples_leaf': [1, 2, 4]
+}
+rf_cat_search = RandomizedSearchCV(forest_clf_cat, rf_params, scoring='f1', n_iter=10, cv=5, random_state=42, n_jobs=-1)
+rf_cat_search.fit(X_train, y_train)
+
+```
+
+
+```{python}
+forest_clf_cat_best = rf_cat_search.best_estimator_
+print(rf_cat_search.best_params_)
+cv_res = pd.DataFrame(rf_cat_search.cv_results_)
+cv_res.sort_values(by="mean_test_score", ascending=False, inplace=True)
+cv_res
+```
+
+```{python}
+importances = pd.Series(forest_clf_cat_best[1].feature_importances_, index=forest_clf_cat_best[0].get_feature_names_out())
+importances.sort_values(ascending=True).plot(kind='barh', figsize=(6, 12))
+plt.title("Feature Importances from Random Forest")
+plt.show()
+```
+
+# Examine features more closely
+
+## Check for correlated features
+Since my features are categorical, pearson is not the right metric to use.
+- I should use spearman rank correlation for ordinal variables
+- For categorical variables, chtGPT is suggesting something else:
+```{python}
+from scipy.stats import chi2_contingency
+
+
+# For ordinal variables
+corr_matrix = X_train[ord_cols_mod].corr(method = "spearman")
+corr_matrix
+
+fig, ax = plt.subplots(figsize=(6,6))
+sns.heatmap(corr_matrix, annot = True, cmap = "coolwarm", ax= ax)
+
+# For categorical/nominal variables
+# Simple label encoding just for correlation (not for model)
+df_encoded = df.copy()
+for col in cat_cols_mod:
+    df_encoded[col] = df[col].astype('category').cat.codes
+
+def cramers_v(x, y):
+    confusion_matrix = pd.crosstab(x, y)
+    chi2 = chi2_contingency(confusion_matrix)[0]
+    n = confusion_matrix.sum().sum()
+    phi2 = chi2 / n
+    r, k = confusion_matrix.shape
+    return np.sqrt(phi2 / min(k - 1, r - 1))
+
+cramers_results = pd.DataFrame(index=cat_cols_mod, columns=cat_cols_mod)
+
+for col1 in cat_cols_mod:
+    for col2 in cat_cols_mod:
+        if col1 == col2:
+            cramers_results.loc[col1, col2] = 1.0
+        else:
+            val = cramers_v(df[col1], df[col2])
+            cramers_results.loc[col1, col2] = round(val, 3)
+#print("\nCramér's V (Nominal Features):")
+#print(cramers_results)
+
+fig, ax = plt.subplots(figsize=(20,20))
+sns.heatmap(cramers_results.astype(float), ax = ax, annot = True, cmap = "coolwarm")
+
+def find_high_correlations(corr_matrix, threshold=0.8):
+    correlated_pairs = []
+    for i in range(len(corr_matrix.columns)):
+        for j in range(i):
+            if abs(corr_matrix.iloc[i, j]) > threshold:
+                col1 = corr_matrix.columns[i]
+                col2 = corr_matrix.columns[j]
+                correlated_pairs.append((col1, col2, corr_matrix.iloc[i, j]))
+    return correlated_pairs
+
+
+print("\nHighly correlated nominal features (Cramér's V > 0.8):")
+print(find_high_correlations(cramers_results.astype(float), threshold = 0.5))
+
+```
+
+
+
+# Check features with very low variance
+
+- There are no low variance columns in the data
+```{python}
+
+
+selector = VarianceThreshold(threshold=0.01)
+selector.fit(X_train)
+selector.get_support()
+low_variance_cols = X_train.columns[~selector.get_support()]
+low_variance_cols
+```
 
 # Try stacking classifiers - Not working right now
 ```{python}
