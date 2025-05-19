@@ -1,0 +1,236 @@
+---
+title: "Prediction the most important variables for presence of diabetes in Canadian Community Health Survey Data"
+author: "Shefali Lathwal"
+date: "2025-05-19"
+date-modified: last-modified
+toc: true
+format: html
+jupyter: python3
+echo: true
+---
+
+# Import requires libraries
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split, cross_val_predict, cross_val_score
+from sklearn.preprocessing import FunctionTransformer, MinMaxScaler, StandardScaler, OneHotEncoder
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from xgboost import XGBClassifier
+from sklearn.metrics import ConfusionMatrixDisplay, precision_recall_curve
+from sklearn.metrics import f1_score, classification_report, confusion_matrix
+from imblearn.over_sampling import SMOTE
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.base import clone
+import seaborn as sns
+from sklearn.feature_selection import VarianceThreshold
+```
+
+# Frame the Problem and Look at the Big Picture
+
+##  1. Define the objective in business terms
+The Canadian Community Healthcare Survey Data consists of responses from thousands of individual across all provinces and territories about their demographics, health, lifestyle, and many other factors. One of the key pieces of information collected is whether someone has diabetes or not.
+
+It is clear from the data that the [prevalence of diabetes among survey respondents varies a lot across the provinces and territories](https://slathwal.github.io/blogs/2025-05-13/).The goal of this project is to idenfity the key variables that can predict the presence or absence of diabetes. 
+
+## 2. How will your solution be used?
+The variables associated with diabetes can be used as follows:
+    1. They can then be used by healthcare providers and health authorities to make policy decisions aimed at reducing the prevalence of diabetes in areas where it is high.
+    2. They can be used to identify high-risk people and test them if their diabetes status is unknown.
+
+## 3. What are the current solutions/workarounds (if any)?
+Not known
+
+## 4. How should you frame this problems? Supervised/unsupervised, online/offline etc.?
+The problem will be supervised learning since the data consist of known diabetes status and other factors. Since we want to identify which features are associated with diabetes status, we would use a model that can output feature importances such as logistic regression, random forest or lightGBM.
+
+## 5. How should performance be measured?
+
+- The performance of the model will be measured by f1 score and precision-recall curve because the data are skewed, i.e., the number of people with diabetes is about 1/10th of people without diabetes.
+- The end-goal is to identify key factors associated with diabetes, so the performance measure is only to identify the best model. The outcome of the project will be a list of variables given to healthcare providers that are most highly associated with diabetes status.
+
+## 6. Is the performance measure aligned with the business objective?
+The performance measure, i.e, the f1 sccore is important to know how many false positives and false negatives we are likely to see and what the burden on healthcare is likely to be to screen patients.
+
+
+## 7. What would be the minimum performance needed to reach the business objective?
+Since the model will be used for screening healthy population to identify who is likely to have diabetes, we will be quite tolerant of false positives, but we would like to minimize false negatives. For example, since the test for diabetes is a simple blood test, it's okay if many health people take the blood test and are found healthy, but we wouldn't want to miss people who are likely to have diabetes.
+Therefore, we want to minimize false negatives. Therefore, we want to maximize sensitivity/recall, i.e., maximize positive prediction for people who actually have the disease.
+
+## 8. What are comparable problems? Can you reuse experience or tools?
+- Not known
+
+## 9. is human expertise available?
+Yes, factors associated with diabetes have been studies and some factors such as age are well known to be highly correlated with diabetes status. Therefore, we can do a sanity check of the features given by the model.
+
+## 10. How would you solve the problem manually?
+Manually, I would check for a correlation of all the features in the data with the diabetes status and pick the most promising ones.
+
+## 11. List the assumptions you (or others) have made so far?
+the two main assumptions are:
+- The features included in the data will have sufficient information to predict diabetes status
+- Most of the information will be contained in a few features only and most of the features will be irrelevant.
+
+## 12. Verify assumptions if possible.
+NA
+
+# Get the Data
+
+## 1. List the data you need and how much you need.
+- The data is obtained from The Public Use microdata files released by Statistics Canada. The data contains information from over 100,000 survey respondents.
+
+## 2. Find and document where you can get that data.
+The data are downloaded from the statistics canada [website](https://www150.statcan.gc.ca/n1/pub/82m0013x/82m0013x2024001-eng.htm) by clicking on the link for CSV. The downloaded folder contains the data as well as documentation needed to understand the data.
+
+## 3. Check how much space it will take.
+The .csv file containing the data is 320MB in size.
+
+## 4. Check legal obligations, and get authorization if necessary
+Not Applicable
+
+## 5. Get access authorization
+Not Applicable
+
+## 6. Create a workspace with enough storage space.
+Done.
+
+## 7. Get the data.
+Done
+
+## 8. Convert the data to a format you can easily manipulate (without changing the data itself.)
+I am using pandas library in python to work with the csv file.
+```{python}
+df = pd.read_csv("/Users/shefalilathwal/Documents/diabetes_canada_project/data/pumf_cchs.csv")
+print(df.shape)
+col_list = df.columns.tolist()
+print(col_list)
+
+# Only keeping rows with a known diabetes status
+#Codes 9, 7, and 8 are for either refusing to disclose diabetes status, or not knowing or not stated. I should only keep the rows with known diabetes status.
+
+df = df[df["CCC_095"].isin([1.0, 2.0])]
+print(df["CCC_095"].value_counts())
+
+# Only keeping rows for adults - removing code = 1
+df = df[~(df["DHHGAGE"] == 1)]
+print(df["DHHGAGE"].value_counts())
+```
+
+## 9. Ensure sensitive information is deleted or protected (e.g. by anonymizing)
+The data are released for public use and sensitive data has already been removed.
+
+## 10. Check the size and type of data.
+The data are tabular with many features (600+) and survey responses in rows.
+
+## 11. Sample a test set, put it aside, and never look at it (no data snooping).
+```{python}
+df_train_set, df_test_set = train_test_split(df, test_size = 0.3, random_state = 42, shuffle = True, stratify = df["CCC_095"])
+
+## Confirm stratification
+print(df_train_set["CCC_095"].value_counts()/df_train_set.shape[0], df_test_set["CCC_095"].value_counts()/df_test_set.shape[0], df["CCC_095"].value_counts()/df.shape[0])
+
+X_train = df_train_set.copy().drop(columns = "CCC_095", inplace = False)
+y_train = df_train_set["CCC_095"].copy()
+
+X_test = df_test_set.copy().drop(columns = "CCC_095", inplace = False)
+y_test = df_test_set["CCC_095"].copy()
+
+
+# Convert the target variable into True and False
+y_train = (y_train == 1)
+y_test = (y_test == 1)
+y_train.sum(), y_test.sum()
+```
+
+# Explore the data
+
+## 1. Create a copy of the data for exploration - sampling it down to a manageable size if necessary
+
+## 2. Create a Jupyter notebook to keep a record of your data exploration
+
+## 3. Study each attribute and its characteristics:
+- Name
+- Type (Cateogorical - int/flot, bounded/unbounded, test, structured etc.)
+- % of missing values
+- Noisiness and type of noise (stochastic, outliers, rounding errors, etc.)
+- usefulness for the task
+- type of distribution (Gaussian, uniform, logarithmic etc.)
+
+## 4. For supervised learning tasks, identify the target attribute(s).
+
+## 5. Visualize the data.
+
+## 6. Study the correlation between attributes.
+
+## 7. Sutdy how you would solve the problem amnually.
+
+## 8. Study the promising transformations you may want to apply.
+
+## 9. Identify extra data that would be useful.
+
+## 10. Document what you have learned.
+
+# Prepare the data
+
+## 1. Clean the data - fix or remove outliers, fill in mssing values or drop their rows or columns.
+
+## 2. Perform feature selection (optional). Drop the attributes that provide no useful information for the task
+
+## 3. Perform feature engineering, where appropriate.
+    - Discretize continuous features
+    - Decompose features e.g. ccategorical, date/time etc.
+    - Add promising transformations of features. E.g log(x), sqrt(x), x2 etc.
+    - Aggregate features into promising new features.
+
+## 4. perform feature scaling
+    - Standardize or normalize features
+
+# Shortlist Promising models
+
+## 1. Train many quick and direty models from different categories using standard parameters
+e.g. linear, naiveBayes, SVM, random forest, neural net etc.
+
+## 2. Measure and compare their performance using n-fold cross validation and compute the mean and standard deviation of the performance measure on the n-folds.
+
+## 3. Analyze the most significant variables for each algorithm
+
+## 4. Analyze the types of errors the models make.
+    - What data would a human have used to avoid these errors?
+
+## 5. Perform a quick round of feature selection and engineering.
+
+## 6. Perofrm one or two more quick iterations of the five previous steps.
+
+## 7. Shortlist the top three to five most promising models, preferring the models that make different types of errors.
+
+# Fine-Tune the System
+
+## 1. Fine-tune the hyperparameters using cross-validation.
+- Treat your data transformation choices as hyperprameters, especially when you are not sure about them. e.g. if you're not sure whether to replace missing values with zeros or with the median value, or to just drop the rows.
+- Unless there are very frew hyperparameters to explore, prefer random search over grid search. If training is very long, you may prefer a Bayesian optimization approach???
+
+## 2. Try ensemble methods. Combining your best models will often produce better performance than running them individually.
+
+## 3. Once you are confident about your final model, measure its performance on the test set to estimate the generalization error. DO NOT tweak the model after measuring the generalization error.
+
+# Present Your Solution
+
+## 1. Document what you have done.
+## 2. Create a nice presentation - make sure you highlight the big picture first.
+## 3. Explain why your solution achieves the business objective.
+## 4. Don't forget to present interesting points you noticed along the way.
+- Describe what worked and what did not
+- List your assumptions and system's limitations
+## 5. Ensure your key findings are commiunicated through beautiful visualizations or easy-to-remember statements.
+- e.g. the median income is the number one predictor of housing prices.
+
+# Launch
+## 1. Get your solution ready for production (plug into production data inputs, write unit tests etc.)
+## 2. Write monitoring code to check your system's live performance. and trigger alerts when it drops.
+## 3. Retrian your models on a regular basis on fresh data (automate as much as possible).
+
