@@ -1,0 +1,350 @@
+---
+title: "Working on data pre-processing for diabetes prediction"
+author: "Shefali Lathwal"
+date: "2025-05-19"
+date-modified: last-modified
+toc: true
+format: html
+jupyter: python3
+echo: true
+---
+
+# Import required libraries
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split, cross_val_predict, cross_val_score
+from sklearn.preprocessing import FunctionTransformer, MinMaxScaler, StandardScaler, OneHotEncoder
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from xgboost import XGBClassifier
+from sklearn.metrics import ConfusionMatrixDisplay, precision_recall_curve
+from sklearn.metrics import f1_score, classification_report, confusion_matrix
+from imblearn.over_sampling import SMOTE
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.base import clone
+import seaborn as sns
+from sklearn.feature_selection import VarianceThreshold
+```
+
+# 1. Get the data
+```{python}
+df = pd.read_csv("/Users/shefalilathwal/Documents/diabetes_canada_project/data/pumf_cchs.csv")
+print(df.shape)
+col_list = df.columns.tolist()
+print(col_list)
+
+# Only keeping rows with a known diabetes status
+#Codes 9, 7, and 8 are for either refusing to disclose diabetes status, or not knowing or not stated. I should only keep the rows with known diabetes status.
+
+df = df[df["CCC_095"].isin([1.0, 2.0])]
+print(df["CCC_095"].value_counts())
+
+# Only keeping rows for adults - removing code = 1
+df = df[~(df["DHHGAGE"] == 1)]
+print(df["DHHGAGE"].value_counts())
+```
+
+# 2. Sample a test set, put it aside, and never look at it (no data snooping).
+```{python}
+df_train_set, df_test_set = train_test_split(df, test_size = 0.3, random_state = 42, shuffle = True, stratify = df["CCC_095"])
+
+## Confirm stratification
+print(df_train_set["CCC_095"].value_counts()/df_train_set.shape[0], df_test_set["CCC_095"].value_counts()/df_test_set.shape[0], df["CCC_095"].value_counts()/df.shape[0])
+
+X_train = df_train_set.copy().drop(columns = "CCC_095", inplace = False)
+y_train = df_train_set["CCC_095"].copy()
+
+X_test = df_test_set.copy().drop(columns = "CCC_095", inplace = False)
+y_test = df_test_set["CCC_095"].copy()
+
+
+# Convert the target variable into True and False
+y_train = (y_train == 1)
+y_test = (y_test == 1)
+y_train.sum(), y_test.sum()
+```
+
+# 3. Explore the data
+
+## 3. Study each attribute and its characteristics:
+- Name
+- Type (Cateogorical - int/flot, bounded/unbounded, test, structured etc.)
+- % of missing values
+- Noisiness and type of noise (stochastic, outliers, rounding errors, etc.)
+- usefulness for the task
+- type of distribution (Gaussian, uniform, logarithmic etc.)
+
+I studied the attributes in previous notebooks. I need the following steps:
+
+- Calculate % of missing values and drop features with a lot of missing values
+- Study correlation between attributes and drop attributes that are highly correlated.
+- Visualize remaining features
+
+
+### Define a function to calculate missing values and remove columns with a large number of missing data
+```{python}
+# Step1:  convert_missing_codes to na
+
+def check_special_missing(df):
+    df_cleaned = df.copy()
+    missing_summary = {}
+    #max_val_list = []
+    for col in df.columns:
+        #print(col)
+        if df[col].dtype in [np.float64, np.int64]:
+            unique_vals = df[col].dropna().unique()
+            #print(len(unique_vals), unique_vals)
+            if len(unique_vals) == 0:
+                continue
+            max_val = max(unique_vals)
+            #max_val_list.append(max_val)
+            #print(max_val)
+            missing_codes = []
+            # Identify the missing value codes based on magnitude
+            if max_val < 10:  # single digits (1–9)
+                missing_codes = [6, 7, 8, 9]
+            elif max_val < 100:  # double digits (01–99)
+                missing_codes = [96, 97, 98, 99]
+            elif max_val < 1000:  # triple digits (001–999)
+                missing_codes = [996, 997, 998, 999, 999.6, 999.7, 999.8, 999.9]
+            elif max_val < 10000:
+                missing_codes = [9996, 9997, 9998, 9999, 9999.90, 9999.80, 9999.70, 9999.60]
+            elif max_val < 100000:
+                missing_codes = [99996, 99997, 99998, 99999]
+            else:
+                continue
+            
+            # Count and replace
+            if missing_codes:
+                counts = {code: (df[col] == code).sum() for code in missing_codes}
+                if any(counts.values()):
+                    missing_summary[col] = counts
+                df_cleaned[col] = df_cleaned[col].replace(missing_codes, np.nan)
+
+    # Return cleaned data and summary
+    return df_cleaned
+
+df_nan = check_special_missing(X_train)
+```
+
+```{python}
+cols_missing_data = pd.Series(round(df_nan.isna().sum()/df_nan.shape[0]*100,2))
+#cols_missing_data
+
+fig, ax = plt.subplots()
+cols_missing_data.plot.hist(bins = 20, ax = ax)
+ax.set_xlabel("Percentage of data missing")
+ax.set_title("Histogram of percentage of data missing across all columns")
+print(f" Out of a total {cols_missing_data.shape[0]}, there are {(cols_missing_data >= 30).sum()} columns with more than 30% data missing.")
+```
+
+Subset the data to include only columns with less than 30% data missing
+```{python}
+X_train = X_train.loc[:, ~(cols_missing_data >= 30)]
+X_test = X_test.loc[:, ~(cols_missing_data >= 30)]
+```
+
+Remove some additional columns that we know are not likely to be realted to diabetes status
+
+```{python}
+cols_to_exclude = ['ADM_RNO1', 'VERDATE', 'REFPER', 'ADM_PRX','GEOGPRV', 'GEODGHR4', 'ADM_045','WTS_M']
+X_train = X_train.drop(columns = cols_to_exclude, inplace = False)
+X_test = X_test.drop(columns = cols_to_exclude, inplace = False)
+```
+
+Remove columns that have the same value across all rows
+```{python}
+df_nan = check_special_missing(X_train)
+selector = VarianceThreshold()
+selector.fit(df_nan)
+selector.get_support()
+#selector.variances_
+non_zero_variance_cols = df_nan.columns[~selector.get_support()]
+non_zero_variance_cols
+X_train = X_train.drop(columns = non_zero_variance_cols, inplace = False)
+X_test = X_test.drop(columns = non_zero_variance_cols, inplace = False)
+```
+
+Remove other columns starting with the string "DO" because these are columns that just contain a survey response flag.
+Some examples include: ['DOMAC', 'DOGEN','DOHWT','DOCCC', 'DOHUI','DOCIH', 'DOFVC', 'DOFGU', 'DOSMK', 'DOTAL', 'DOETS', 'DOALC', 'DOALW', 'DOAMU', 'DOCAN', 'DOSD,S', 'DODRG', 'DOPAA', 'DOPAY', 'DOSBE', 'DOSXB', 'DODRV', 'DODWI', 'DOFLU', 'DOBPC', 'DOMAM', 'DOCCT','DOCMH','DOSWL', 'DODEP', 'DOSUI','DOSPS','DOPHC', 'DOMDA', 'DOCP2','DOCP3','DOPNC','DOPSC', 'DOPEX','DOUCN','DOSDC', 'DOPMK', 'DOINS','DOFSC']
+
+```{python}
+X_train = X_train.loc[:,~X_train.columns.str.startswith('DO')]
+X_test = X_test.loc[:,~X_test.columns.str.startswith('DO')]
+```
+
+
+### Study correlation between attributes and drop attributes that are highly correlated.
+In order to study correlation, I will have to identify which features are numerical, which are categorical and which are ordinal. To do the above, I will need to look at the distribution of each variable.
+First check how many columns we have
+```{python}
+print(f"Number of columns so far: {X_train.shape[1]}")
+```
+
+```{python}
+df_nan = check_special_missing(X_train)
+for col in X_train.columns:
+    fig, ax = plt.subplots()
+    df_nan[col].hist(ax = ax)
+    ax.set_title(col)
+    plt.show()
+    plt.close(fig)
+```
+
+None of the columns included at this stage contain continuous values. However, some columns are likely ordinal where increasing codes are meaningful. Should I separate ordinal variables from categorical?
+
+Since my features are categorical, pearson is not the right metric to use.
+- I should use spearman rank correlation for ordinal variables
+- For categorical variables, chatGPT is suggesting something else:
+```{python}
+ord_cols = ["INCDGRRS", "INCDGRPR", "INCDGRCA", "INCDGHH", "FSCDVHF2","FSCDVAF2", "PNCDVNED", "PNCDVPNO", "PNCDVPNC", "PNCDVPNM", "PNCDVPNI", "PNCDVHCT", "PHC_035", "ALCDVTTM","ALC_020", "ALC_015", "SMKDVSTY", "SMK_005","GENDVSWL","GENDVMHI","GENDVHDI","GEN_030","GEN_020","GEN_015","GEN_010","GEN_005","EHG2DVH3","DHHGAGE"]
+
+cat_cols = [col for col in X_train.columns if col not in ord_cols]
+#print(cat_cols)
+len(cat_cols) + len(ord_cols) == len(X_train.columns)
+```
+
+```{python}
+from scipy.stats import chi2_contingency
+
+# I will work with dataframe containing nan values for calculating correlations, otherwise the correlations would be incorrect.
+
+
+# For ordinal variables
+spearman_corr = df_nan[ord_cols].corr(method = "spearman").abs()
+#spearman_corr
+
+# For categorical/nominal variables
+# Simple label encoding just for correlation (not for model)
+df_encoded = df_nan.copy()
+for col in cat_cols:
+    df_encoded[col] = df_nan[col].astype('category').cat.codes
+#print(df_encoded)
+def cramers_v(x, y):
+    confusion_matrix = pd.crosstab(x, y)
+    chi2 = chi2_contingency(confusion_matrix)[0]
+    n = confusion_matrix.sum().sum()
+    phi2 = chi2 / n
+    r, k = confusion_matrix.shape
+    return np.sqrt(phi2 / min(k - 1, r - 1))
+
+cramers_results = pd.DataFrame(index=cat_cols, columns=cat_cols)
+
+for col1 in cat_cols:
+    for col2 in cat_cols:
+        if col1 == col2:
+            cramers_results.loc[col1, col2] = 1.0
+        else:
+            val = cramers_v(df_encoded[col1], df_encoded[col2])
+            cramers_results.loc[col1, col2] = round(val, 3)
+print("\nCramér's V (Nominal Features):")
+print(cramers_results)
+
+```
+
+Plot the correlation matrix and find highly correlated columns
+```{python}
+fig, ax = plt.subplots(figsize=(20,20))
+sns.heatmap(spearman_corr, annot = True, cmap = "coolwarm", ax= ax)
+ax.set_title("Spearman Rank Correlation for Ordinal Variables")
+
+fig, ax = plt.subplots(figsize=(30,30))
+sns.heatmap(cramers_results.astype(float), ax = ax, annot = True, cmap = "coolwarm")
+ax.set_title("Cramer's V correlation for categorical variables")
+```
+
+```{python}
+def find_high_correlations(corr_matrix, threshold=0.8):
+    correlated_pairs = []
+    for i in range(len(corr_matrix.columns)):
+        for j in range(i):
+            if abs(corr_matrix.iloc[i, j]) > threshold:
+                col1 = corr_matrix.columns[i]
+                col2 = corr_matrix.columns[j]
+                correlated_pairs.append((col1, col2, corr_matrix.iloc[i, j]))
+    return correlated_pairs
+
+correlated_ord_cols = find_high_correlations(spearman_corr.astype(float), threshold = 0.8)
+print("\nHighly correlated ordinal features (spearman ran correlation > 0.8):")
+print(correlated_ord_cols)
+
+correlated_cat_cols = find_high_correlations(cramers_results.astype(float), threshold = 0.8)
+print("\nHighly correlated nominal features (Cramér's V > 0.8):")
+print(correlated_cat_cols)
+```
+
+Collect correlated columns to drop
+
+```{python}
+corr_ord_cols_to_drop = set()
+for col1, col2, corr in correlated_ord_cols:
+    corr_ord_cols_to_drop.add(col2)
+#corr_ord_cols_to_drop = list(set(corr_ord_cols_to_drop))
+corr_ord_cols_to_drop = list(corr_ord_cols_to_drop)
+
+corr_cat_cols_to_drop = set()
+for col1, col2, corr in correlated_cat_cols:
+    corr_cat_cols_to_drop.add(col2)
+corr_cat_cols_to_drop = list(corr_cat_cols_to_drop)
+
+corr_cols_to_drop = corr_ord_cols_to_drop+corr_cat_cols_to_drop
+
+ord_cols_mod = [col for col in ord_cols if col not in corr_ord_cols_to_drop]
+cat_cols_mod = [col for col in cat_cols if col not in corr_cat_cols_to_drop]
+print(ord_cols_mod, cat_cols_mod)
+```
+
+Double-check the correlations to make sure all correlations are below 0.8 now
+
+```{python}
+df_nan = df_nan.drop(columns = corr_cols_to_drop)
+print(df_nan.shape[1])
+spearman_corr = df_nan[ord_cols_mod].corr(method = "spearman").abs()
+
+df_encoded = df_nan.copy()
+for col in cat_cols_mod:
+    df_encoded[col] = df_nan[col].astype('category').cat.codes
+cramers_results = pd.DataFrame(index=cat_cols_mod, columns=cat_cols_mod)
+
+for col1 in cat_cols_mod:
+    for col2 in cat_cols_mod:
+        if col1 == col2:
+            cramers_results.loc[col1, col2] = 1.0
+        else:
+            val = cramers_v(df_encoded[col1], df_encoded[col2])
+            cramers_results.loc[col1, col2] = round(val, 3)
+#print("\nCramér's V (Nominal Features):")
+#print(cramers_results)
+#spearman_corr
+
+print("\nHighly correlated ordinal features (spearman ran correlation > 0.8):")
+print(find_high_correlations(spearman_corr.astype(float), threshold = 0.8))
+ 
+print("\nHighly correlated nominal features (Cramér's V > 0.8):")
+print(find_high_correlations(cramers_results.astype(float), threshold = 0.8))
+
+fig, ax = plt.subplots(figsize=(20,20))
+sns.heatmap(spearman_corr, annot = True, cmap = "coolwarm", ax= ax)
+ax.set_title("Spearman Rank Correlation for Ordinal Variables")
+
+fig, ax = plt.subplots(figsize=(30,30))
+sns.heatmap(cramers_results.astype(float), ax = ax, annot = True, cmap = "coolwarm")
+ax.set_title("Cramer's V correlation for categorical variables")
+
+```
+
+
+Drop the highly correlated ordinal and categorical columns from X_train and X_test
+
+```{python}
+X_train = X_train.drop(columns = corr_cols_to_drop, inplace = False)
+X_test = X_test.drop(columns = corr_cols_to_drop, inplace = False)
+```
+
+# Prepare the data
+
