@@ -20,7 +20,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from xgboost import XGBClassifier
-from sklearn.metrics import ConfusionMatrixDisplay, precision_recall_curve
+from sklearn.metrics import ConfusionMatrixDisplay, precision_recall_curve, average_precision_score
 from sklearn.metrics import f1_score, classification_report, confusion_matrix
 from imblearn.over_sampling import SMOTE
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
@@ -29,6 +29,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.base import clone
 import seaborn as sns
 from sklearn.feature_selection import VarianceThreshold
+from lightgbm import LGBMClassifier
 ```
 
 # 1. Get the data
@@ -269,12 +270,12 @@ def find_high_correlations(corr_matrix, threshold=0.8):
                 correlated_pairs.append((col1, col2, corr_matrix.iloc[i, j]))
     return correlated_pairs
 
-correlated_ord_cols = find_high_correlations(spearman_corr.astype(float), threshold = 0.8)
-print("\nHighly correlated ordinal features (spearman ran correlation > 0.8):")
+correlated_ord_cols = find_high_correlations(spearman_corr.astype(float), threshold = 0.7)
+print("\nHighly correlated ordinal features (spearman ran correlation > 0.7):")
 print(correlated_ord_cols)
 
-correlated_cat_cols = find_high_correlations(cramers_results.astype(float), threshold = 0.8)
-print("\nHighly correlated nominal features (Cramér's V > 0.8):")
+correlated_cat_cols = find_high_correlations(cramers_results.astype(float), threshold = 0.7)
+print("\nHighly correlated nominal features (Cramér's V > 0.7):")
 print(correlated_cat_cols)
 ```
 
@@ -322,11 +323,11 @@ for col1 in cat_cols_mod:
 #print(cramers_results)
 #spearman_corr
 
-print("\nHighly correlated ordinal features (spearman ran correlation > 0.8):")
-print(find_high_correlations(spearman_corr.astype(float), threshold = 0.8))
+print("\nHighly correlated ordinal features (spearman ran correlation > 0.7):")
+print(find_high_correlations(spearman_corr.astype(float), threshold = 0.7))
  
-print("\nHighly correlated nominal features (Cramér's V > 0.8):")
-print(find_high_correlations(cramers_results.astype(float), threshold = 0.8))
+print("\nHighly correlated nominal features (Cramér's V > 0.7):")
+print(find_high_correlations(cramers_results.astype(float), threshold = 0.7))
 
 fig, ax = plt.subplots(figsize=(20,20))
 sns.heatmap(spearman_corr, annot = True, cmap = "coolwarm", ax= ax)
@@ -346,5 +347,183 @@ X_train = X_train.drop(columns = corr_cols_to_drop, inplace = False)
 X_test = X_test.drop(columns = corr_cols_to_drop, inplace = False)
 ```
 
-# Prepare the data
+Ideally I would like to tune the threshold for getting the best model. But for now, I am fixing the threshold at 0.7
 
+## 1. Clean the data - fix or remove outliers, fill in mssing values or drop their rows or columns.
+
+## 2. Perform feature selection (optional). Drop the attributes that provide no useful information for the task - done
+
+## 3. Perform feature engineering, where appropriate.
+    - Discretize continuous features
+    - Decompose features e.g. ccategorical, date/time etc.
+    - Add promising transformations of features. E.g log(x), sqrt(x), x2 etc.
+    - Aggregate features into promising new features.
+
+## 4. perform feature scaling
+    - Standardize or normalize features
+```{python}
+print(f"Number of features in the data: {X_train.shape[1]}")
+```
+
+```{python}
+ord_pipeline = Pipeline([
+    ("convert_to_na", FunctionTransformer(func = check_special_missing, feature_names_out="one-to-one")),
+    ("fill_na", SimpleImputer(strategy='most_frequent', add_indicator = False)),
+    ("min_max_scaler", MinMaxScaler())
+    ])
+cat_pipeline = Pipeline([
+    ("convert_to_na", FunctionTransformer(func = check_special_missing, feature_names_out="one-to-one")),
+    ("fill_na", SimpleImputer(strategy = "most_frequent", add_indicator = False)),
+    ("one_hot_encoder", OneHotEncoder(sparse_output=False, handle_unknown="ignore", drop = "first"))
+])
+```
+
+# Shortlist Promising models
+
+- I am going to look at LogisticRegression, RandomForest and LightGBM
+
+## Try LogisticRegression
+
+```{python}
+preprocessing = ColumnTransformer([
+    ("cat", cat_pipeline, cat_cols_mod),
+    ("ord", ord_pipeline, ord_cols_mod)
+])
+
+lr = LogisticRegression(class_weight='balanced',random_state=42)
+lr_clf = Pipeline([
+("pre_processing", preprocessing),
+("logistic_regression", lr)
+])
+lr_clf.fit(X_train, y_train)
+
+lr_cv = cross_val_score(lr_clf, X_train, y_train, cv = 5, scoring = "f1")
+lr_cv
+```
+
+```{python}
+coefficients = np.abs(lr_clf[1].coef_[0])
+#coefficients
+#len(coefficients)
+
+
+# # Display feature importance using coefficients and odds ratios
+feature_importance_lr = pd.DataFrame({
+    'Feature': lr_clf[0].get_feature_names_out(),
+    'Coefficient': coefficients
+}).sort_values(by='Coefficient', ascending=False)
+print("\nFeature Importance in Logistic Regression (Absolute value of coefficients):")
+print(feature_importance_lr)
+```
+
+## Try LightGBM
+
+```{python}
+from lightgbm import LGBMClassifier
+lgbm = LGBMClassifier(class_weight='balanced', random_state=42)
+
+lgbm_clf = Pipeline([
+("pre_processing", preprocessing),
+("light_gbm", lgbm)
+])
+lgbm_clf.fit(X_train, y_train)
+
+lgbm_cv = cross_val_score(lgbm_clf, X_train, y_train, cv = 5, scoring = "f1")
+lgbm_cv
+```
+
+```{python}
+importances = lgbm_clf[1].feature_importances_
+feature_names = lgbm_clf[0].get_feature_names_out()
+# # Display feature importance using coefficients and odds ratios
+feature_importance_light_gbm = pd.DataFrame({
+    'Feature': feature_names,
+    'Importance': importances
+}).sort_values(by='Importance', ascending=False)
+print("\nFeature Importance in lightGBM:")
+print(feature_importance_light_gbm)
+```
+
+## Try RandomForest
+```{python}
+rf = RandomForestClassifier(class_weight='balanced', random_state=42)
+forest_clf = Pipeline([
+("pre_processing", preprocessing),
+("random_forest", rf)
+])
+forest_clf.fit(X_train, y_train)
+forest_cv = cross_val_score(forest_clf, X_train, y_train, cv = 5, scoring = "f1")
+forest_cv
+# From previous finetuning, I know that the performance of random forest improves a lot with finetuning
+```
+
+```{python}
+rf = RandomForestClassifier(class_weight='balanced', random_state=42, n_estimators=300, min_samples_split=2, min_samples_leaf=4, max_depth = 40)
+forest_clf = Pipeline([
+("pre_processing", preprocessing),
+("random_forest", rf)
+])
+forest_clf.fit(X_train, y_train)
+forest_cv = cross_val_score(forest_clf, X_train, y_train, cv = 5, scoring = "f1")
+forest_cv
+```
+
+```{python}
+importances = forest_clf[1].feature_importances_
+feature_names = forest_clf[0].get_feature_names_out()
+# # Display feature importance using coefficients and odds ratios
+feature_importance_forest = pd.DataFrame({
+    'Feature': feature_names,
+    'Importance': importances
+}).sort_values(by='Importance', ascending=False)
+print("\nFeature Importance in RandomForest:")
+print(feature_importance_forest)
+```
+
+So far, the random forest model has the best f1 score. logistic regression and lightGBM has comparable scores.
+- I will also need to check if any of the models are overfitting or underfitting.
+
+## Look at the overlap between top 20 features from each model
+
+```{python}
+
+# Get top 20 features from each importance column
+top20_lr = set(feature_importance_lr.nlargest(20, 'Coefficient')['Feature'])
+top20_light_gbm = set(feature_importance_light_gbm.nlargest(20, 'Importance')['Feature'])
+top20_forest = set(feature_importance_forest.nlargest(20, 'Importance')['Feature'])
+
+# Find common features across all three top 20 sets
+common_all = top20_lr & top20_light_gbm & top20_forest
+
+# Output
+print("Common in all three:", common_all, len(common_all))
+
+```
+
+## Let's look at the precision recall curves for all three models
+```{python}
+# Get cross-validated predicted probabilities (for the positive class)
+
+fig, ax = plt.subplots(figsize=(8, 6))
+def plot_precision_recall_curve(classifier_name, X, y, title, method = "predict_proba", cv = 5):
+    y_scores = cross_val_predict(classifier_name, X, y, cv=cv, method=method)[:, 1]
+
+    # Compute precision-recall curve
+    precision, recall, thresholds = precision_recall_curve(y, y_scores)
+    avg_precision = average_precision_score(y, y_scores)
+
+    # Plotting
+    ax.plot(recall, precision, label=f'{title} (AP = {avg_precision:.2f})')
+    ax.set_xlabel('Recall')
+    ax.set_ylabel('Precision')
+    ax.set_title(f'Precision-Recall Curve (Cross-Validated) for {title}')
+    ax.legend()
+    ax.grid(True)
+    #plt.show()
+    #plt.close()
+
+for classifier_name, title in zip([lr_clf,lgbm_clf, forest_clf],["LogisticRegression", "LightGBM", "RandomForest"]):
+    plot_precision_recall_curve(classifier_name, X_train, y_train, title)
+```
+
+# Error analysis for each type of model
