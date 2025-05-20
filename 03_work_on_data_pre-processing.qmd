@@ -30,6 +30,9 @@ from sklearn.base import clone
 import seaborn as sns
 from sklearn.feature_selection import VarianceThreshold
 from lightgbm import LGBMClassifier
+from sklearn.manifold import TSNE
+import shap
+from sklearn.model_selection import learning_curve
 ```
 
 # 1. Get the data
@@ -150,7 +153,7 @@ X_train = X_train.loc[:, ~(cols_missing_data >= 30)]
 X_test = X_test.loc[:, ~(cols_missing_data >= 30)]
 ```
 
-Remove some additional columns that we know are not likely to be realted to diabetes status
+Remove some additional columns that we know are not likely to be related to diabetes status
 
 ```{python}
 cols_to_exclude = ['ADM_RNO1', 'VERDATE', 'REFPER', 'ADM_PRX','GEOGPRV', 'GEODGHR4', 'ADM_045','WTS_M']
@@ -361,10 +364,12 @@ Ideally I would like to tune the threshold for getting the best model. But for n
 
 ## 4. perform feature scaling
     - Standardize or normalize features
+
 ```{python}
 print(f"Number of features in the data: {X_train.shape[1]}")
 ```
 
+Define the pipeline steps for ordinal and categorical columns
 ```{python}
 ord_pipeline = Pipeline([
     ("convert_to_na", FunctionTransformer(func = check_special_missing, feature_names_out="one-to-one")),
@@ -401,6 +406,7 @@ lr_cv = cross_val_score(lr_clf, X_train, y_train, cv = 5, scoring = "f1")
 lr_cv
 ```
 
+Feature importance for logistic regression model
 ```{python}
 coefficients = np.abs(lr_clf[1].coef_[0])
 #coefficients
@@ -432,6 +438,7 @@ lgbm_cv = cross_val_score(lgbm_clf, X_train, y_train, cv = 5, scoring = "f1")
 lgbm_cv
 ```
 
+Feature importance for lightGBM model
 ```{python}
 importances = lgbm_clf[1].feature_importances_
 feature_names = lgbm_clf[0].get_feature_names_out()
@@ -457,6 +464,7 @@ forest_cv
 # From previous finetuning, I know that the performance of random forest improves a lot with finetuning
 ```
 
+Random Forest model with custom parameters
 ```{python}
 rf = RandomForestClassifier(class_weight='balanced', random_state=42, n_estimators=300, min_samples_split=2, min_samples_leaf=4, max_depth = 40)
 forest_clf = Pipeline([
@@ -468,6 +476,7 @@ forest_cv = cross_val_score(forest_clf, X_train, y_train, cv = 5, scoring = "f1"
 forest_cv
 ```
 
+Feature importance for randomForest model
 ```{python}
 importances = forest_clf[1].feature_importances_
 feature_names = forest_clf[0].get_feature_names_out()
@@ -500,13 +509,24 @@ print("Common in all three:", common_all, len(common_all))
 
 ```
 
+
+## Calculate probability scores and predictions for all three models
+```{python}
+y_pred_lr = cross_val_predict(lr_clf, X_train, y_train, cv = 5)
+y_pred_forest = cross_val_predict(forest_clf, X_train, y_train, cv = 5)
+y_pred_lgbm= cross_val_predict(lgbm_clf, X_train, y_train, cv = 5)
+y_scores_lr = cross_val_predict(lr_clf, X_train, y_train, cv = 5, method = "predict_proba")
+y_scores_forest = cross_val_predict(forest_clf, X_train, y_train, cv = 5, method = "predict_proba")
+y_scores_lgbm= cross_val_predict(lgbm_clf, X_train, y_train, cv = 5, method = "predict_proba")
+```
+
+
 ## Let's look at the precision recall curves for all three models
 ```{python}
 # Get cross-validated predicted probabilities (for the positive class)
 
 fig, ax = plt.subplots(figsize=(8, 6))
-def plot_precision_recall_curve(classifier_name, X, y, title, method = "predict_proba", cv = 5):
-    y_scores = cross_val_predict(classifier_name, X, y, cv=cv, method=method)[:, 1]
+def plot_precision_recall_curve(title, y, y_scores):
 
     # Compute precision-recall curve
     precision, recall, thresholds = precision_recall_curve(y, y_scores)
@@ -522,8 +542,240 @@ def plot_precision_recall_curve(classifier_name, X, y, title, method = "predict_
     #plt.show()
     #plt.close()
 
-for classifier_name, title in zip([lr_clf,lgbm_clf, forest_clf],["LogisticRegression", "LightGBM", "RandomForest"]):
-    plot_precision_recall_curve(classifier_name, X_train, y_train, title)
+for title, y_scores in zip(["LogisticRegression", "LightGBM", "RandomForest"],[y_scores_lr[:, 1],y_scores_forest[:, 1], y_scores_lgbm[:, 1]]):
+    plot_precision_recall_curve(title, y_train, y_scores)
 ```
 
 # Error analysis for each type of model
+
+## Error analysis for linear regression
+
+### Look at the learning curves
+```{python}
+from sklearn.model_selection import learning_curve
+
+train_sizes, train_scores, valid_scores = learning_curve(
+    lr_clf, X_train, y_train, train_sizes=np.linspace(0.01, 1.0, 10), cv=5,
+    scoring="f1")
+train_errors = -train_scores.mean(axis=1)
+valid_errors = -valid_scores.mean(axis=1)
+
+plt.plot(train_sizes, train_errors, "r-+", linewidth=2, label="train")
+plt.plot(train_sizes, valid_errors, "b-", linewidth=3, label="valid")
+#[...]  # beautify the figure: add labels, axis, grid, and legend
+plt.legend()
+plt.show()
+```
+
+### Confusion Matrices
+```{python}
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred_lr, normalize = "true", values_format="0.2%")
+
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred_forest, normalize = "pred", values_format="0.2%")
+```
+
+Change the prediciton threshold
+```{python}
+threshold = 0.3
+y_pred_lr_custom = (y_scores_lr[:,1]> threshold)
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred_lr_custom, normalize = "true", values_format="0.2%")
+```
+
+
+### Visualize probabilities for false postives and false negatives 
+```{python}
+# 2. Identify misclassifications
+false_positives = (y_pred_lr == 1) & (y_train == 0)
+false_negatives = (y_pred_lr == 0) & (y_train == 1)
+correct = (y_pred_lr == y_train)
+
+print(f"False Positives: {np.sum(false_positives)}")
+print(f"False Negatives: {np.sum(false_negatives)}")
+
+# ----------------------------------
+# A. Histogram of FP and FN
+# ----------------------------------
+plt.figure(figsize=(10, 5))
+plt.hist(y_scores_lr[:,1][false_positives], bins=20, alpha=0.6, label='False Positives')
+plt.hist(y_scores_lr[:,1][false_negatives], bins=20, alpha=0.6, label='False Negatives')
+plt.xlabel('Predicted Probability')
+plt.ylabel('Frequency')
+plt.title('Histogram of Misclassified Probabilities')
+plt.legend()
+plt.show()
+#
+```
+
+### Error breakdown
+```{python}
+
+results = pd.DataFrame({
+    'actual': y_train,
+    'predicted': y_pred_lr,
+    'proba': y_scores_lr[:, 1]
+})
+results['error_type'] = results.apply(
+    lambda row: 'TP' if row.actual == 1 and row.predicted == 1 else
+                'TN' if row.actual == 0 and row.predicted == 0 else
+                'FP' if row.actual == 0 and row.predicted == 1 else
+                'FN', axis=1
+)
+results_lr = results.copy()
+# Should look at the features for which FP and FNs are high
+```
+
+
+### Look at SHAP values for false positives and false negatives
+```{python}
+import shap
+# ----------------------------------
+# C. SHAP Explanations
+# ----------------------------------
+print("Generating SHAP explanations...")
+X_transformed = lr_clf.named_steps['pre_processing'].transform(X_train)
+model = lr_clf.named_steps["logistic_regression"]
+feature_names = lr_clf[0].get_feature_names_out()
+
+explainer = shap.Explainer(model, X_transformed)
+shap_values_raw = explainer(X_transformed)
+
+# Step 4: Wrap each SHAP value into Explanation with feature names
+shap_values = shap.Explanation(
+    values=shap_values_raw.values,
+    base_values=shap_values_raw.base_values,
+    data=shap_values_raw.data,
+    feature_names=feature_names
+)
+
+# Show SHAP for 1 FP and 1 FN
+if np.any(false_positives):
+    idx_fp = np.where(false_positives)[0][0]
+    print("\nSHAP Explanation for a False Positive:")
+    shap.plots.waterfall(shap_values[idx_fp])
+
+if np.any(false_negatives):
+    idx_fn = np.where(false_negatives)[0][0]
+    print("\nSHAP Explanation for a False Negative:")
+    shap.plots.waterfall(shap_values[idx_fn])
+
+# Use in SHAP summary plot
+shap.summary_plot(shap_values, features=X_transformed)
+```
+
+## Error analysis for random forest
+
+### Learning curve
+```{python}
+
+train_sizes, train_scores, valid_scores = learning_curve(
+    forest_clf, X_train, y_train, train_sizes=np.linspace(0.01, 1.0, 10), cv=5,
+    scoring="f1")
+train_errors = -train_scores.mean(axis=1)
+valid_errors = -valid_scores.mean(axis=1)
+
+plt.plot(train_sizes, train_errors, "r-+", linewidth=2, label="train")
+plt.plot(train_sizes, valid_errors, "b-", linewidth=3, label="valid")
+#[...]  # beautify the figure: add labels, axis, grid, and legend
+plt.legend()
+plt.title("Learning curves for RandomForest model")
+plt.show()
+```
+
+The learning curve shows that the RnadomForest Model is overfitting the data. There is a big gap between the training and validation curve
+
+### Confusion matrices for random forests
+```{python}
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred_forest, normalize = "true", values_format="0.2%")
+
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred_forest, normalize = "pred", values_format="0.2%")
+
+threshold = 0.2
+y_pred_forest_custom = (y_scores_forest[:,1]> threshold)
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred_forest_custom, normalize = "true", values_format="0.2%")
+
+```
+
+
+### Visualizing probability distributions for RandomForest
+```{python}
+# 2. Identify misclassifications
+false_positives = (y_pred_forest == 1) & (y_train == 0)
+false_negatives = (y_pred_forest == 0) & (y_train == 1)
+correct = (y_pred_forest == y_train)
+
+print(f"False Positives: {np.sum(false_positives)}")
+print(f"False Negatives: {np.sum(false_negatives)}")
+
+# ----------------------------------
+# A. Histogram of FP and FN
+# ----------------------------------
+plt.figure(figsize=(10, 5))
+plt.hist(y_scores_forest[:,1][false_positives], bins=20, alpha=0.6, label='False Positives')
+plt.hist(y_scores_forest[:,1][false_negatives], bins=20, alpha=0.6, label='False Negatives')
+
+plt.xlabel('Predicted Probability')
+plt.ylabel('Frequency')
+plt.title('Histogram of Misclassified Probabilities')
+plt.legend()
+plt.show()
+```
+
+For random forest, visualizing SHAP values is too slow.
+
+## Error analysis for lightGBM
+
+### Learning Curve
+```{python}
+
+train_sizes, train_scores, valid_scores = learning_curve(
+    lgbm_clf, X_train, y_train, train_sizes=np.linspace(0.01, 1.0, 10), cv=5,
+    scoring="f1")
+train_errors = -train_scores.mean(axis=1)
+valid_errors = -valid_scores.mean(axis=1)
+
+plt.plot(train_sizes, train_errors, "r-+", linewidth=2, label="train")
+plt.plot(train_sizes, valid_errors, "b-", linewidth=3, label="valid")
+#[...]  # beautify the figure: add labels, axis, grid, and legend
+plt.legend()
+plt.title("Learning curves for lightGBM model")
+plt.show()
+```
+
+LightGBM is also overfitting the training data because there is a difference between the training and validation curves.
+
+### Confusion matrices for light GBM
+```{python}
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred_lgbm, normalize = "true", values_format="0.2%")
+
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred_lgbm, normalize = "pred", values_format="0.2%")
+
+threshold = 0.2
+y_pred_lgbm_custom = (y_scores_lgbm[:,1]> threshold)
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred_lgbm_custom, normalize = "true", values_format="0.2%")
+
+```
+
+
+### Visualizing probability distributions for RandomForest
+```{python}
+# 2. Identify misclassifications
+false_positives = (y_pred_lgbm == 1) & (y_train == 0)
+false_negatives = (y_pred_lgbm == 0) & (y_train == 1)
+correct = (y_pred_lgbm == y_train)
+
+print(f"False Positives: {np.sum(false_positives)}")
+print(f"False Negatives: {np.sum(false_negatives)}")
+
+# ----------------------------------
+# A. Histogram of FP and FN
+# ----------------------------------
+plt.figure(figsize=(10, 5))
+plt.hist(y_scores_lgbm[:,1][false_positives], bins=20, alpha=0.6, label='False Positives')
+plt.hist(y_scores_lgbm[:,1][false_negatives], bins=20, alpha=0.6, label='False Negatives')
+plt.xlabel('Predicted Probability')
+plt.ylabel('Frequency')
+plt.title('Histogram of Misclassified Probabilities')
+plt.legend()
+plt.show()
+```
+
