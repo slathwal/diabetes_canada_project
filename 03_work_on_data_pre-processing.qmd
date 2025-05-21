@@ -1249,6 +1249,8 @@ rfecv.fit(X_transformed, y_train)
 print(f"Optimal number of features: {rfecv.n_features_}")
 ```
 
+
+
 ```{python}
 cv_results = pd.DataFrame(rfecv.cv_results_)
 plt.figure()
