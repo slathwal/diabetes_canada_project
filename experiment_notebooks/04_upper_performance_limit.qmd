@@ -21,6 +21,15 @@ from src.data_preparation import keep_known_codes_in_column, remove_known_codes_
 from src.data_preparation import convert_missing_codes_to_na
 from src.data_preparation import separate_df_into_train_and_test
 from sklearn.model_selection import train_test_split
+from imblearn.under_sampling import RandomUnderSampler
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import ConfusionMatrixDisplay
+from sklearn.model_selection import cross_val_predict, cross_val_score, cross_validate
+from sklearn.utils import shuffle
+from sklearn.preprocessing import OneHotEncoder
+
 ```
 
 # Import the data and keep only the relevant rows
@@ -47,4 +56,190 @@ X_test, y_test = separate_df_into_train_and_test(df_test_set, target_col)
 # Convert the target variable into True and False
 y_train, y_test = (y_train == 1), (y_test == 1)
 y_train.sum(), y_test.sum()
+```
+
+# Upper performance limit
+As I found in notebook 03, removing columns with a large number of missing values and removing columns containing flags etc. ends up removing all numerical columns. In the end, we are left with columns with only discrete values - either ordinal or categorical.
+
+Because of the above, there is a limit on the maximum performance of any model. We will illustrate this using only two column for predicting diabetes status.
+
+Now, the total number of combinations are 16. There are four discrete values of age, 2 discrete values of blood pressure medication and 2 discrete values of diabetes status.
+
+If I were to solve this problem manually, then for each combination of age and blood pressure medication, I would predict a diabetes status corresponding to the class that contains the majority of values.
+For example, if age = 2.0 and blood pressure medication status is 2.0, the 134 rows have value False, and 4 rows have value True. Therefore, if I predict a value False, I would be right 134/138 times. However, the above is not quite right, because the number of false values will always be greater than number of true values as True samples are approximately 1/10 of the whole data. Therefore, I need to do the above analysis after undersampling the data.
+
+```{python}
+cols_to_include = ["DHHGAGE", "CCC_070"]
+rus = RandomUnderSampler(random_state=0)
+X_resampled, y_resampled = rus.fit_resample(X_train, y_train)
+
+df_resampled_na = convert_missing_codes_to_na(pd.concat([X_resampled[cols_to_include],y_resampled], axis = 1))
+df_resampled_by_status = df_resampled_na.groupby(cols_to_include+[target_col], as_index = False).size()
+df_resampled_by_status
+```
+
+If I were to manually solve this problem, I would do it as follows:
+1. Group with age= 2.0 and CCC_070 = 1.0 will be False
+2. Group with age= 2.0 and CCC_070 = 2.0 will be False
+3. Group with age= 3.0 and CCC_070 = 1.0 will be False
+4. Group with age= 3.0 and CCC_070 = 2.0 will be False
+5. Group with age= 4.0 and CCC_070 = 1.0 will be True
+6. Group with age= 4.0 and CCC_070 = 2.0 will be False
+7. Group with age= 5.0 and CCC_070 = 1.0 will be True
+8. Group with age= 5.0 and CCC_070 = 2.0 will be False
+
+```{python}
+# Group 1
+group_1 = {"tn": 18, "fn":4}
+group_2 = {"tn": 1140, "fn":33}
+group_3 = {"tn": 84, "fn":67}
+group_4 = {"tn": 1142, "fn":131}
+group_5 = {"fp": 360, "tp":623}
+group_6 = {"tn": 1167, "fn":350}
+group_7 = {"fp": 1444, "tp":4290}
+group_8 = {"tn": 1506, "fn":1348}
+groups = [group_1, group_2, group_3, group_4, group_5, group_6, group_7, group_8]
+final_numbers = {"tn": 0, "tp":0, "fn": 0, "fp": 0}
+for group in groups:
+    for key in final_numbers.keys():
+        if key in group.keys():   
+            final_numbers[key] = final_numbers[key] + group[key]
+print(final_numbers)
+
+precision = final_numbers["tp"]/(final_numbers["tp"]+final_numbers["fp"]) 
+recall = final_numbers["tp"]/(final_numbers["tp"]+final_numbers["fn"])
+f1_score = 2*precision*recall/(precision+recall)
+
+print(f"Max Precision: {precision:.2f}")
+print(f"Max Recall: {recall:.2f}")
+print(f"Max F1 score: {f1_score:.2f}")
+```
+
+Note, that in the analysis above, there were 49 values in CCC_070 which were na and were dropped.
+
+The above is eye-opening. My F1 score is stuck at 0.39, when theoretical maximum is at 0.72.
+
+# Repeat the analysis for a maximum theoretical value with imputation of missing na values in CCC_070
+```{python}
+print(df_resampled_na.shape)
+print(df_resampled_na.isna().sum())
+imputer = SimpleImputer(strategy="most_frequent")
+df_resampled_na_imputed = pd.DataFrame(imputer.fit_transform(df_resampled_na), index = df_resampled_na.index, columns = df_resampled_na.columns)
+print(df_resampled_na_imputed.isna().sum())
+df_resampled_imputed_by_status = df_resampled_na_imputed.groupby(cols_to_include+[target_col], as_index = False).size()
+df_resampled_imputed_by_status
+```
+
+```{python}
+# Group 1
+group_1 = {"tn": 18, "fn":4}
+group_2 = {"tn": 1140, "fn":33}
+group_3 = {"tn": 84, "fn":67}
+group_4 = {"tn": 1142, "fn":131}
+group_5 = {"fp": 361, "tp":626}
+group_6 = {"tn": 1167, "fn":350}
+group_7 = {"fp": 1460, "tp":4319}
+group_8 = {"tn": 1506, "fn":1348}
+groups = [group_1, group_2, group_3, group_4, group_5, group_6, group_7, group_8]
+final_numbers = {"tn": 0, "tp":0, "fn": 0, "fp": 0}
+for group in groups:
+    for key in final_numbers.keys():
+        if key in group.keys():   
+            final_numbers[key] = final_numbers[key] + group[key]
+print(final_numbers)
+
+precision = final_numbers["tp"]/(final_numbers["tp"]+final_numbers["fp"]) 
+recall = final_numbers["tp"]/(final_numbers["tp"]+final_numbers["fn"])
+f1_score = 2*precision*recall/(precision+recall)
+
+print(f"Max Precision: {precision:.2f}")
+print(f"Max Recall: {recall:.2f}")
+print(f"Max F1 score: {f1_score:.2f}")
+```
+The imputation does not make a difference. Now I will take the imputed data and build a model with just these two variables and see the maximum value of f1 score I can achieve.
+
+# Build models
+
+## Prepare the data for two columns
+```{python}
+cols_to_include = ["DHHGAGE", "CCC_070"]
+
+# Undersample to balance the classes
+rus = RandomUnderSampler(random_state=0)
+X_resampled, y_resampled = rus.fit_resample(X_train, y_train)
+
+# Convert missing values to np.nan and impute them to 
+X_resampled_nan = convert_missing_codes_to_na(X_resampled[cols_to_include])
+imputer = SimpleImputer(strategy = "most_frequent")
+print(X_resampled_nan.columns)
+X_imputed = pd.DataFrame(imputer.fit_transform(X_resampled_nan), index = X_resampled_nan.index, columns = X_resampled_nan.columns)
+
+# The data are no longer shuffled, so I need to shuffle them
+X_shuffled, y_shuffled = shuffle(X_imputed, y_resampled, random_state=42) # Setting random_state for reproducibility
+
+print("Shuffled X:\n", X_shuffled)
+print("Shuffled y:\n", y_shuffled)
+
+ohe= OneHotEncoder(drop = "first", handle_unknown="ignore", sparse_output=False)
+X_one_hot = pd.DataFrame(ohe.fit_transform(X_shuffled, y_shuffled), index = X_shuffled.index, columns = ohe.get_feature_names_out())
+X_one_hot
+```
+
+Data to use for model training = X_one_hot, y_shuffled
+
+## Fit a logistic regression model on two columns
+
+```{python}
+lr_clf = LogisticRegression(penalty = None, random_state = 1)
+
+
+lr_cv = cross_validate(lr_clf, X_one_hot, y_shuffled, cv = 5, scoring = ["neg_log_loss", "f1"])
+y_pred_lr = cross_val_predict(lr_clf, X_one_hot, y_shuffled, cv = 5)
+lr_cv
+```
+
+```{python}
+ConfusionMatrixDisplay.from_predictions(y_shuffled, y_pred_lr)
+ConfusionMatrixDisplay.from_predictions(y_shuffled, y_pred_lr, normalize = "true", values_format="0.2%")
+ConfusionMatrixDisplay.from_predictions(y_shuffled, y_pred_lr, normalize = "pred", values_format="0.2%")
+```
+
+# Prepare the data with three columns
+```{python}
+cols_to_include = ["DHHGAGE", "CCC_070", "CCC_080"]
+
+# Undersample to balance the classes
+rus = RandomUnderSampler(random_state=0)
+X_resampled, y_resampled = rus.fit_resample(X_train, y_train)
+
+# Convert missing values to np.nan and impute them to 
+X_resampled_nan = convert_missing_codes_to_na(X_resampled[cols_to_include])
+imputer = SimpleImputer(strategy = "most_frequent")
+print(X_resampled_nan.columns)
+X_imputed = pd.DataFrame(imputer.fit_transform(X_resampled_nan), index = X_resampled_nan.index, columns = X_resampled_nan.columns)
+
+# The data are no longer shuffled, so I need to shuffle them
+X_shuffled, y_shuffled = shuffle(X_imputed, y_resampled, random_state=42) # Setting random_state for reproducibility
+
+print("Shuffled X:\n", X_shuffled)
+print("Shuffled y:\n", y_shuffled)
+ohe= OneHotEncoder(drop = "first", handle_unknown="ignore", sparse_output=False)
+X_one_hot = pd.DataFrame(ohe.fit_transform(X_shuffled, y_shuffled), index = X_shuffled.index, columns = ohe.get_feature_names_out())
+X_one_hot
+
+```
+
+```{python}
+
+
+lr_clf = LogisticRegression(penalty = None, random_state = 1)
+
+
+lr_cv = cross_validate(lr_clf, X_one_hot, y_shuffled, cv = 5, scoring = ["neg_log_loss", "f1"], return_estimator=True)
+y_pred_lr = cross_val_predict(lr_clf, X_one_hot, y_shuffled, cv = 5)
+lr_cv
+```
+
+```{python}
+lr_cv['estimator'][0].coef_
 ```

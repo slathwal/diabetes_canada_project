@@ -68,7 +68,7 @@ def convert_missing_codes_to_na(df):
     # Return cleaned data
     return df_cleaned
 
-
+# If a dataframe contains the target column, separate it from the dataframe
 def separate_df_into_train_and_test(df, target_col):
     """Separate a dataframe containing a target column into
     a training dataframe and a target pandas series"""
