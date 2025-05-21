@@ -1,8 +1,38 @@
+NOte: This file is being edited.
+
 # Diabetes Prediction using Canadian Community Health Survey Data
 
-This project explores and builds a predictive model for identifying individuals at risk for diabetes, using data from the [**Canadian Community Health Survey (CCHS) Public Use Microdata File (PUMF)**](https://www150.statcan.gc.ca/n1/en/catalogue/82M0013X) for the years 2019-2020. The project follows standard machine learning best practices, including data exploration, preprocessing, model training, evaluation, and cross-validation.
+This project explores and builds a predictive model for identifying individuals at risk for diabetes, using data from the [**Canadian Community Health Survey (CCHS) Public Use Microdata File (PUMF)**](https://www150.statcan.gc.ca/n1/en/catalogue/82M0013X) for the years 2019-2020. The survey is broad and contains more than 600 questions on a variety of topics such as geographical location, demographics, general health, general mental health, education, chronic conditions (including diabetes), lifestyle factors such as fruit and vegetable consumption, smoking, alcohol use, drug use, physical activity, sedentary behaviours, sexual behaviours etc., engagement with healthcare system, screening test, involvement with community, socio-demographic characteristics such as country of birth, immigration status etc., health insurance, food security, household income and many more.
+
+The main goal of this project is to understand the following:
+
+** Can a general community health survey data be used to extract useful information abut factors associated with a chronic condition such as diabetes? **
+
+- The project includes exploratory analysis to identify the best methods for data pre-processing, and implements machine learning methods such as Logistic Regression, SupportVectorClassifier and LightGBM to predict the presence of diabetes in a survey respondent, and to identify the most important features asssociated with the prediction.
+
+- Feature selection and undersampling are used to balance the classes in the dataset. 
+
+- Precision recall curves and F1 score are used to assess and compare different models.
+
+- The project shows that general purpose survey data can be used to recover important factors associated with chronic conditions such as diabetes, but the predictive models built on these data suffer from low precision, i.e., a large number of false postives.
+
+***
+## Content
+1. ...
+2. ...
+3. ...
+4. ...
+5. ...
+
+## Introduction
+
+## Objectives
 
 ## Methodology
+
+## Results
+
+## Working Notes
 
 1. **Exploratory Data Analysis (EDA)**
    - Examined data distributions, correlations, and potential predictors
@@ -43,7 +73,7 @@ This project explores and builds a predictive model for identifying individuals 
     - I also tried balancing the dataset with RandomUnderSampling and that also does not make any difference in the performance.
     - Because all features are categorical, there is a limit to max performance, which is clear using a small number of variables.
     - I don't think combining models would do much in this case.
-    - I think I will also check a few other models like kNN classifier and SVC, and perhaps try a dimensional reduction method, do error analysis on those with the 3 feature dataset and finalize the model. - TO DO
+    - I think I will also check a few other models like kNN classifier (kNN would not be good here because) and SVC, and perhaps try a dimensional reduction method, do error analysis on those with the 3 feature dataset and finalize the model. - TO DO
 
     
    
