@@ -193,6 +193,8 @@ fig, ax = plt.subplots()
 df_plot.plot.barh(y = "percent_respondents", x = "Age",ax = ax)
 ax.set_xlabel("% of respondents with diabetes")
 ax.set_ylabel("Age in years")
+
+grouped.value_counts()
 ```
 
 # Count diabetes percentage by province and gender

@@ -33,6 +33,7 @@ from lightgbm import LGBMClassifier
 from sklearn.manifold import TSNE
 import shap
 from sklearn.model_selection import learning_curve
+from IPython.display import Markdown
 ```
 
 # 1. Get the data
@@ -569,6 +570,7 @@ plt.show()
 
 ### Confusion Matrices
 ```{python}
+ConfusionMatrixDisplay.from_predictions(y_train, y_pred_lr)
 ConfusionMatrixDisplay.from_predictions(y_train, y_pred_lr, normalize = "true", values_format="0.2%")
 
 ConfusionMatrixDisplay.from_predictions(y_train, y_pred_forest, normalize = "pred", values_format="0.2%")
@@ -779,3 +781,584 @@ plt.legend()
 plt.show()
 ```
 
+So far, Logistic Regression is underfitting, tuned RandomForest is massively overfitting and lightGBM is also underfitting. The validation curve is plateauing at about 5000 training datasets and the training curve continues to get worse as we increase data.
+
+What are my next options?
+Try feature selection?
+
+Work with logistic regression and lightGBM going forward for now.
+
+# Use age as categorical variable rather than ordinal
+The first thing would be to test if age can be represented as a categorical variable and see if it makes a difference.
+```{python}
+ord_cols_mod, cat_cols_mod
+# Move age from ordinal columns to categorical columns
+ord_cols_mod = [col for col in ord_cols_mod if col != "DHHGAGE"]
+cat_cols_mod = list(set(cat_cols_mod + ["DHHGAGE"]))
+ord_cols_mod, cat_cols_mod
+```
+
+## Create logisitc regression pipeline again
+
+```{python}
+preprocessing = ColumnTransformer([
+    ("cat", cat_pipeline, cat_cols_mod),
+    ("ord", ord_pipeline, ord_cols_mod)
+])
+
+lr = LogisticRegression(class_weight='balanced',random_state=42, max_iter = 500)
+lr_clf = Pipeline([
+("pre_processing", preprocessing),
+("logistic_regression", lr)
+])
+lr_clf.fit(X_train, y_train)
+
+lr_cv = cross_val_score(lr_clf, X_train, y_train, cv = 5, scoring = "f1")
+lr_cv
+```
+
+Feature importance
+```{python}
+coefficients = np.abs(lr_clf[1].coef_[0])
+#coefficients
+#len(coefficients)
+
+
+# # Display feature importance using coefficients and odds ratios
+feature_importance_lr = pd.DataFrame({
+    'Feature': lr_clf[0].get_feature_names_out(),
+    'Coefficient': coefficients
+}).sort_values(by='Coefficient', ascending=False)
+print("\nFeature Importance in Logistic Regression (Absolute value of coefficients):")
+print(feature_importance_lr)
+```
+
+Learning curve
+```{python}
+train_sizes, train_scores, valid_scores = learning_curve(
+    lr_clf, X_train, y_train, train_sizes=np.linspace(0.01, 1.0, 10), cv=5,
+    scoring="f1")
+train_errors = -train_scores.mean(axis=1)
+valid_errors = -valid_scores.mean(axis=1)
+
+plt.plot(train_sizes, train_errors, "r-+", linewidth=2, label="train")
+plt.plot(train_sizes, valid_errors, "b-", linewidth=3, label="valid")
+#[...]  # beautify the figure: add labels, axis, grid, and legend
+plt.legend()
+plt.title("Learning curves for Logistic Regression classifier")
+plt.xlabel("Training data size")
+plt.ylabel("-f1 score")
+plt.show()
+
+
+```
+
+Classification report
+```{python}
+y_pred_lr = cross_val_predict(lr_clf, X_train, y_train, cv = 5)
+y_scores_lr = cross_val_predict(lr_clf, X_train, y_train, cv = 5, method = "predict_proba")
+```
+
+```{python}
+print("Logistic Regression classification report")
+Markdown(classification_report(y_train, y_pred_lr))
+```
+
+
+# Build a model with a few manually selected variables
+Top 10 variables from logistic regression model are:
+1. DHHGAGE - age
+2. GEN_005 - perceived health
+3. CCC_080 - took medication for high blood cholesterol
+4. ALC_015 - frequency of drinking alcohol
+5. CCC_070 - took medication for high blood pressure
+6. SDCDVFLA - visible minority
+7. HWTDGBCC - BMI classification
+8. DHH_SEX - Sex at Birth
+9. SMK_005 - type of smoker - daily, occasionally, not at all
+10. GEN_015 - Perceived mental health
+
+Selected variables:
+1. DHHGAGE
+3. CCC_080 
+5. CCC_070
+
+```{python}
+manually_selected_cols = ["DHHGAGE", "CCC_080", "CCC_070"]
+X_test = X_test[manually_selected_cols]
+X_train = X_train[manually_selected_cols]
+
+for col in manually_selected_cols:
+    print(col)
+    print(X_train[col].value_counts()/(X_train.shape[0]), X_test[col].value_counts()/(X_test.shape[0]))
+
+df_train_copy = df_train_set[manually_selected_cols+["CCC_095"]]
+df_train_nan = check_special_missing(df_train_copy)
+```
+
+## Univariate Analysis
+```{python}
+for col in df_train_nan.columns:
+    sns.countplot(x = col, data = df_train_nan)
+    plt.show()
+    plt.close()
+
+```
+
+## Bivariate analysis
+
+```{python}
+# Boxplots
+for col in manually_selected_cols:
+    sns.countplot(x = col, hue = "CCC_095", data = df_train_nan)
+    plt.show()
+    plt.close()
+```
+
+## Define ordinal and categorical columns 
+```{python}
+ord_cols = []
+cat_cols = [col for col in manually_selected_cols if col not in ord_cols]
+```
+
+```{python}
+ord_pipeline = Pipeline([
+    ("convert_to_na", FunctionTransformer(func = check_special_missing, feature_names_out="one-to-one")),
+    ("fill_na", SimpleImputer(strategy='most_frequent', add_indicator = False)),
+    ("min_max_scaler", MinMaxScaler())
+    ])
+cat_pipeline = Pipeline([
+    ("convert_to_na", FunctionTransformer(func = check_special_missing, feature_names_out="one-to-one")),
+    ("fill_na", SimpleImputer(strategy = "most_frequent", add_indicator = False)),
+    ("one_hot_encoder", OneHotEncoder(sparse_output=False, handle_unknown="ignore", drop = "first"))
+])
+```
+
+Define Logistc regression model
+```{python}
+preprocessing = ColumnTransformer([
+    ("cat", cat_pipeline, cat_cols),
+    ("ord", ord_pipeline, ord_cols)
+])
+
+lr = LogisticRegression(class_weight='balanced',random_state=42)
+lr_clf = Pipeline([
+("pre_processing", preprocessing),
+("logistic_regression", lr)
+])
+lr_clf.fit(X_train, y_train)
+
+lr_cv = cross_val_score(lr_clf, X_train, y_train, cv = 5, scoring = "f1")
+lr_cv
+```
+
+```{python}
+y_pred_lr_manual = cross_val_predict(lr_clf, X_train, y_train, cv = 5)
+```
+
+```{python}
+print("Logistic Regression classification report for manual columns")
+Markdown(classification_report(y_train, y_pred_lr_manual))
+```
+
+## Error analysis - let's look at false positives and false negatives in the data
+```{python}
+
+results = pd.DataFrame({
+    'actual': y_train,
+    'predicted': y_pred_lr_manual
+})
+results['error_type'] = results.apply(
+    lambda row: 'TP' if row.actual == 1 and row.predicted == 1 else
+                'TN' if row.actual == 0 and row.predicted == 0 else
+                'FP' if row.actual == 0 and row.predicted == 1 else
+                'FN', axis=1
+)
+#results_lr_manual = results.copy()
+results_lr_manual = pd.concat([X_train, results], axis = 1)
+results_lr_manual_nan = check_special_missing(results_lr_manual)
+```
+
+
+### Let's look at false positives and false negatives
+```{python}
+fp_df = results_lr_manual[results_lr_manual["error_type"] == "FP"]
+fn_df = results_lr_manual[results_lr_manual["error_type"] == "FN"]
+
+fp_df_nan = check_special_missing(fp_df)
+fn_df_nan = check_special_missing(fn_df)
+```
+
+False positives
+```{python}
+for col in manually_selected_cols:
+    fig, ax = plt.subplots(1, 2)
+    sns.countplot(x = col, hue = "predicted",data = fp_df_nan, ax = ax[0])
+    sns.countplot(x = col, data = df_train_nan, ax = ax[1])
+    plt.show(fig)
+    plt.close(fig)
+```
+False negatives
+
+```{python}
+for col in manually_selected_cols:
+    fig, ax = plt.subplots(1, 2)
+    sns.countplot(x = col, data = fn_df_nan, ax = ax[0])
+    sns.countplot(x = col, data = df_train_nan, ax = ax[1])
+    plt.show(fig)
+    plt.close(fig)
+```
+
+```{python}
+print("Looking at error distribution for DHHGAGE")
+col = "DHHGAGE"
+for value in results_lr_manual[col].unique():
+    print(value)
+    df = results_lr_manual_nan[results_lr_manual_nan[col] == value]
+    print(df["error_type"].value_counts()/df.shape[0])
+col = "CCC_080"
+print("Looking at error distribution for CCC_080")
+for value in results_lr_manual[col].unique():
+    print(value)
+    df = results_lr_manual_nan[results_lr_manual_nan[col] == value]
+    print(df["error_type"].value_counts()/df.shape[0])
+
+print("Looking at error distribution for CCC_070")    
+col = "CCC_070"
+for value in results_lr_manual[col].unique():
+    print(value)
+    df = results_lr_manual_nan[results_lr_manual_nan[col] == value]
+    print(df["error_type"].value_counts()/df.shape[0])
+```
+
+The false positives and false negatives are certainly not random and there are more false positives in certain categories that others. With false negatives, as well, there is a pattern.
+
+
+## Try a model after shuffling labels
+```{python}
+import random
+y_train_shuffled = np.array(y_train.copy())
+random.shuffle(y_train_shuffled)
+
+lr_cv_shuffled = cross_val_score(lr_clf, X_train, y_train_shuffled, cv = 5, scoring = "f1")
+lr_cv_shuffled
+```
+
+```{python}
+y_pred_lr_manual_shuffled = cross_val_predict(lr_clf, X_train, y_train_shuffled, cv = 5)
+```
+
+```{python}
+print("Logistic Regression classification report for manual columns")
+Markdown(classification_report(y_train, y_pred_lr_manual_shuffled))
+```
+
+
+## Now what if I undersample and make both classes equal
+
+```{python}
+from imblearn.under_sampling import RandomUnderSampler
+from imblearn.pipeline import Pipeline as imbPipeline
+from collections import Counter
+
+rus = RandomUnderSampler(random_state=0)
+X_resampled, y_resampled = rus.fit_resample(X_train, y_train)
+print(sorted(Counter(y_resampled).items()))
+
+#sm= SMOTE(sampling_strategy=0.3)
+#print('Original dataset shape %s' % Counter(y_train))
+#X_res, y_res = sm.fit_resample(X_train, y_train)
+#print('Resampled dataset shape %s' % Counter(y_res))
+#under = RandomUnderSampler(sampling_strategy=0.5)
+
+preprocessing = ColumnTransformer([
+    ("cat", cat_pipeline, cat_cols),
+    ("ord", ord_pipeline, ord_cols)
+])
+
+lr = LogisticRegression(random_state=42)
+lr_clf_us = imbPipeline([
+("pre_processing", preprocessing),
+("under_sampling",rus),
+("logistic_regression", lr)
+])
+lr_clf_us.fit(X_train, y_train)
+
+lr_cv_us = cross_val_score(lr_clf_us, X_train, y_train, cv = 5, scoring = "f1")
+lr_cv_us
+```
+
+
+```{python}
+y_pred_lr_us = cross_val_predict(lr_clf_us, X_train, y_train, cv = 5)
+```
+
+```{python}
+print("Logistic Regression classification report for manual columns")
+Markdown(classification_report(y_train, y_pred_lr_us))
+```
+
+## Error analysis - let's look at false positives and false negatives in the data
+```{python}
+
+results = pd.DataFrame({
+    'actual': y_train,
+    'predicted': y_pred_lr_us
+})
+results['error_type'] = results.apply(
+    lambda row: 'TP' if row.actual == 1 and row.predicted == 1 else
+                'TN' if row.actual == 0 and row.predicted == 0 else
+                'FP' if row.actual == 0 and row.predicted == 1 else
+                'FN', axis=1
+)
+#results_lr_manual = results.copy()
+results_lr_manual_us = pd.concat([X_train, results], axis = 1)
+results_lr_manual_nan_us = check_special_missing(results_lr_manual_us)
+```
+
+
+```{python}
+print("Looking at error distribution for DHHGAGE")
+col = "DHHGAGE"
+for value in results_lr_manual_us[col].unique():
+    print(value)
+    df = results_lr_manual_nan_us[results_lr_manual_nan_us[col] == value]
+    print(df["error_type"].value_counts()/df.shape[0])
+col = "CCC_080"
+print("Looking at error distribution for CCC_080")
+for value in results_lr_manual_us[col].unique():
+    print(value)
+    df = results_lr_manual_nan_us[results_lr_manual_nan_us[col] == value]
+    print(df["error_type"].value_counts()/df.shape[0])
+
+print("Looking at error distribution for CCC_070")    
+col = "CCC_070"
+for value in results_lr_manual_us[col].unique():
+    print(value)
+    df = results_lr_manual_nan_us[results_lr_manual_nan_us[col] == value]
+    print(df["error_type"].value_counts()/df.shape[0])
+```
+```{python}
+tp_df = results_lr_manual_nan_us[results_lr_manual_nan_us["error_type"] == "TP"]
+print(tp_df.value_counts())
+
+tn_df = results_lr_manual_nan_us[results_lr_manual_nan_us["error_type"] == "TN"]
+print(tn_df.value_counts())
+
+fp_df = results_lr_manual_nan_us[results_lr_manual_nan_us["error_type"] == "FP"]
+print(fp_df.value_counts())
+
+fn_df = results_lr_manual_nan_us[results_lr_manual_nan_us["error_type"] == "FN"]
+print(fn_df.value_counts())
+
+original_df = pd.concat([X_resampled, y_resampled], axis = 1)
+pos_df = original_df[original_df["CCC_095"]== True]
+print(pos_df.value_counts())
+
+neg_df = original_df[original_df["CCC_095"]== False]
+print(neg_df.value_counts())
+
+```
+
+## Use lgbm on undersampled data
+```{python}
+preprocessing = ColumnTransformer([
+    ("cat", cat_pipeline, cat_cols),
+    ("ord", ord_pipeline, ord_cols)
+])
+
+lgbm = LGBMClassifier(random_state=42)
+lgbm_clf_us = imbPipeline([
+("pre_processing", preprocessing),
+("under_sampling",rus),
+("light_gbm", lgbm)
+])
+lgbm_clf_us.fit(X_train, y_train)
+
+lgbm_cv_us = cross_val_score(lgbm_clf_us, X_train, y_train, cv = 5, scoring = "f1")
+lgbm_cv_us
+
+```
+
+
+```{python}
+y_pred_lgbm_us = cross_val_predict(lgbm_clf_us, X_train, y_train, cv = 5)
+```
+
+```{python}
+print("Logistic Regression classification report for manual columns")
+Markdown(classification_report(y_train, y_pred_lgbm_us))
+```
+
+## Error analysis - let's look at false positives and false negatives in the data
+```{python}
+
+results = pd.DataFrame({
+    'actual': y_train,
+    'predicted': y_pred_lgbm_us
+})
+results['error_type'] = results.apply(
+    lambda row: 'TP' if row.actual == 1 and row.predicted == 1 else
+                'TN' if row.actual == 0 and row.predicted == 0 else
+                'FP' if row.actual == 0 and row.predicted == 1 else
+                'FN', axis=1
+)
+#results_lr_manual = results.copy()
+results_lgbm_manual_us = pd.concat([X_train, results], axis = 1)
+results_lgbm_manual_nan_us = check_special_missing(results_lgbm_manual_us)
+```
+
+```{python}
+tp_df = results_lgbm_manual_nan_us[results_lgbm_manual_nan_us["error_type"] == "TP"]
+print(tp_df.value_counts())
+
+tn_df = results_lgbm_manual_nan_us[results_lgbm_manual_nan_us["error_type"] == "TN"]
+print(tn_df.value_counts())
+
+fp_df = results_lgbm_manual_nan_us[results_lgbm_manual_nan_us["error_type"] == "FP"]
+print(fp_df.value_counts())
+
+fn_df = results_lgbm_manual_nan_us[results_lgbm_manual_nan_us["error_type"] == "FN"]
+print(fn_df.value_counts())
+
+```
+
+Even though the classification report for both lightGBM and logistic regression looks the same, lightGBM performs better on some obvious samples.
+
+# Perform feature selection
+
+## Recursive feature selection
+```{python}
+from sklearn.feature_selection import RFECV
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import StratifiedKFold
+X_transformed = lr_clf[0].fit_transform(X_train)
+
+min_features_to_select = 1
+cv = StratifiedKFold(5)
+rfecv = RFECV(
+    estimator=lr_clf[1],
+    step=1,
+    cv=cv,
+    scoring="f1",
+    min_features_to_select=min_features_to_select,
+    n_jobs=2,
+)
+rfecv.fit(X_transformed, y_train)
+
+print(f"Optimal number of features: {rfecv.n_features_}")
+```
+
+```{python}
+cv_results = pd.DataFrame(rfecv.cv_results_)
+plt.figure()
+plt.xlabel("Number of features selected")
+plt.ylabel("Mean test accuracy")
+plt.errorbar(
+    x=cv_results["n_features"],
+    y=cv_results["mean_test_score"],
+    yerr=cv_results["std_test_score"],
+)
+plt.title("Recursive Feature Elimination \nwith correlated features")
+plt.show()
+cv_results
+```
+
+The results show that top 10 features are more than enough for logistic regression atleast
+
+## Univariate feature selection with logistic regression
+
+```{python}
+from sklearn.feature_selection import SelectKBest, mutual_info_classif
+
+mic = mutual_info_classif(X_transformed, y_train, discrete_features=True, random_state = 42)
+mic_pd = pd.DataFrame({"Features" : lr_clf[0].get_feature_names_out(), "mic_score" : mic}).sort_values(by = "mic_score", ascending=False)
+mic_pd
+```
+
+```{python}
+selector.pvalues_
+# X_indices = np.arange(X_transformed.shape[-1])
+# plt.figure(1)
+# plt.clf()
+# plt.bar(X_indices - 0.05, scores, width=0.2)
+# plt.title("Feature univariate score")
+# plt.xlabel("Feature number")
+# plt.ylabel(r"Univariate score ($-Log(p_{value})$)")
+# plt.show()
+```
+
+# let's make a pipeline to reduce dimensions
+```{python}
+preprocessing = ColumnTransformer([
+    ("cat", cat_pipeline, cat_cols_mod),
+    ("ord", ord_pipeline, ord_cols_mod)
+])
+
+lr = LogisticRegression(class_weight='balanced',random_state=42, max_iter = 500)
+lr_clf_reduced = Pipeline([
+("pre_processing", preprocessing),
+("reduce_dim", "passthrough"),
+("logistic_regression", lr)
+])
+
+N_FEATURES_OPTIONS = [2, 4, 8, 10, 20]
+param_grid = [{
+    "reduce_dim": [SelectKBest(mutual_info_classif)],
+    "reduce_dim__k": N_FEATURES_OPTIONS
+}]
+
+grid = GridSearchCV(lr_clf_reduced, n_jobs=1, param_grid=param_grid, scoring = "f1")
+grid.fit(X_train, y_train)
+```
+
+```{python}
+mean_scores = np.array(grid.cv_results_["mean_test_score"])
+mean_scores
+
+pd.DataFrame(grid.cv_results_).sort_values(by = "mean_test_score", ascending = False)
+# # scores are in the order of param_grid iteration, which is alphabetical
+# mean_scores = mean_scores.reshape(len(C_OPTIONS), -1, len(N_FEATURES_OPTIONS))
+# # select score for best C
+# mean_scores = mean_scores.max(axis=0)
+# # create a dataframe to ease plotting
+# mean_scores = pd.DataFrame(
+#     mean_scores.T, index=N_FEATURES_OPTIONS, columns=reducer_labels
+# )
+
+# ax = mean_scores.plot.bar()
+# ax.set_title("Comparing feature reduction techniques")
+# ax.set_xlabel("Reduced number of features")
+# ax.set_ylabel("Digit classification accuracy")
+# ax.set_ylim((0, 1))
+# ax.legend(loc="upper left")
+
+# plt.show()
+```
+
+```{python}
+N_FEATURES_OPTIONS = [20, 30, 40, 50, 56]
+param_grid = [{
+    "reduce_dim": [SelectKBest(mutual_info_classif)],
+    "reduce_dim__k": N_FEATURES_OPTIONS
+}]
+
+grid_extend = GridSearchCV(lr_clf_reduced, n_jobs=1, param_grid=param_grid, scoring = "f1")
+grid_extend.fit(X_train, y_train)
+```
+
+```{python}
+pd.DataFrame(grid_extend.cv_results_).sort_values(by = "mean_test_score", ascending = False)
+```
+
+
+
+# TO DO
+- Discussion with Raaisa - 2025_05_20
+- Try a baseline model by shuffling diabetes labels - Tried, the f1 score is around 0.19
+- Build a model with only three features and take it to the best f1 score - the best performance is an f1 score of 0.36. lightGBM is better than logistic regression, which makes some obvious errors. With 3 variables, it is obvious that the model cannot do any better as the variables are all discrete. So there are a limited number of categories and there is an upper limit to what the model can predict.
+
+- Look at the false predictions and see if there is a trend - age, cholesterol, blood pressure
+- Look at stratification by other variables
+- Look at diabetes prediction model on kaggle - https://www.kaggle.com/code/tumpanjawat/diabetes-eda-random-forest-hp
+- Run with balanced dataset by sampling from non-diabetes people - I undersampled the majority class because we have 10000 samples for minority class and it did not make much of a difference.
