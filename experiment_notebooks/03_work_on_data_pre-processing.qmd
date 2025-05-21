@@ -52,6 +52,8 @@ print(df["CCC_095"].value_counts())
 # Only keeping rows for adults - removing code = 1
 df = df[~(df["DHHGAGE"] == 1)]
 print(df["DHHGAGE"].value_counts())
+
+print(df.shape)
 ```
 
 # 2. Sample a test set, put it aside, and never look at it (no data snooping).

@@ -1,0 +1,50 @@
+---
+title: "Quantifying the performance limit of a binary classification problem with only discrete variables"
+author: "Shefali Lathwal"
+date: "2025-05-21"
+date-modified: last-modified
+toc: true
+format: html
+jupyter: python3
+echo: true
+---
+# Go to root directory of the project
+```{python}
+import os
+os.chdir(os.path.abspath(".."))
+```
+
+# Import required libraries
+```{python}
+import pandas as pd
+from src.data_preparation import keep_known_codes_in_column, remove_known_codes_in_column
+from src.data_preparation import convert_missing_codes_to_na
+from src.data_preparation import separate_df_into_train_and_test
+from sklearn.model_selection import train_test_split
+```
+
+# Import the data and keep only the relevant rows
+Keep data with only known diabetes status and adults (age 18+)
+```{python}
+df = pd.read_csv("/Users/shefalilathwal/Documents/diabetes_canada_project/data/pumf_cchs.csv")
+
+target_col = "CCC_095" # Column with diabetes status
+# Only keeping rows with a known diabetes status - 1 or 2
+df = keep_known_codes_in_column(df, target_col, [1.0, 2.0])
+
+# Removing rows for youth (< 18 years of age), code = 1
+df = remove_known_codes_in_column(df, "DHHGAGE", [1.0])
+print(df.shape)
+```
+
+# Split the data into training and test sets
+```{python}
+df_train_set, df_test_set = train_test_split(df, test_size = 0.3, random_state = 42, shuffle = True, stratify = df[target_col])
+
+X_train, y_train = separate_df_into_train_and_test(df_train_set, target_col)
+X_test, y_test = separate_df_into_train_and_test(df_test_set, target_col)
+
+# Convert the target variable into True and False
+y_train, y_test = (y_train == 1), (y_test == 1)
+y_train.sum(), y_test.sum()
+```

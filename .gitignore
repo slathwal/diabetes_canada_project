@@ -8,3 +8,4 @@ data
 Dig*
 lpr_000*
 *.quarto_ipynb
+__pycache__
