@@ -241,5 +241,54 @@ lr_cv
 ```
 
 ```{python}
+ConfusionMatrixDisplay.from_predictions(y_shuffled, y_pred_lr)
+ConfusionMatrixDisplay.from_predictions(y_shuffled, y_pred_lr, normalize = "true", values_format="0.2%")
+ConfusionMatrixDisplay.from_predictions(y_shuffled, y_pred_lr, normalize = "pred", values_format="0.2%")
 lr_cv['estimator'][0].coef_
+```
+
+# If I don't resample the data
+
+```{python}
+cols_to_include = ["DHHGAGE", "CCC_070", "CCC_080"]
+
+
+# Convert missing values to np.nan and impute them to 
+X_train_nan = convert_missing_codes_to_na(X_train[cols_to_include])
+imputer = SimpleImputer(strategy = "most_frequent")
+print(X_train_nan.columns)
+X_train_imputed = pd.DataFrame(imputer.fit_transform(X_train_nan), index = X_train_nan.index, columns = X_train_nan.columns)
+
+X_train_imputed, y_train
+
+ohe= OneHotEncoder(drop = "first", handle_unknown="ignore", sparse_output=False)
+X_one_hot = pd.DataFrame(ohe.fit_transform(X_train_imputed), index = X_train_imputed.index, columns = ohe.get_feature_names_out())
+X_one_hot
+
+```
+
+```{python}
+lr_clf = LogisticRegression(penalty = None, random_state = 1, class_weight = "balanced")
+
+
+lr_cv = cross_validate(lr_clf, X_one_hot, y_train, cv = 5, scoring = ["neg_log_loss", "f1"], return_estimator=True)
+y_pred_lr = cross_val_predict(lr_clf, X_one_hot, y_train, cv = 5)
+lr_cv
+```
+
+
+```{python}
+# Undersample to balance the classes
+rus = RandomUnderSampler(random_state=0)
+X_resampled, y_resampled = rus.fit_resample(X_one_hot, y_train)
+X_resampled, y_resampled
+```
+
+```{python}
+lr_clf = LogisticRegression(penalty = None, random_state = 1, class_weight = "balanced")
+
+
+lr_cv = cross_validate(lr_clf, X_resampled,y_resampled, cv = 5, scoring = ["neg_log_loss", "f1"], return_estimator=True)
+y_pred_lr = cross_val_predict(lr_clf, X_resampled, y_resampled, cv = 5)
+lr_cv
 ```

@@ -1059,13 +1059,17 @@ Markdown(classification_report(y_train, y_pred_lr_manual_shuffled))
 ## Now what if I undersample and make both classes equal
 
 ```{python}
+X_train, y_train.sum(), cat_cols, ord_cols
+```
+
+```{python}
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.pipeline import Pipeline as imbPipeline
 from collections import Counter
 
 rus = RandomUnderSampler(random_state=0)
 X_resampled, y_resampled = rus.fit_resample(X_train, y_train)
-print(sorted(Counter(y_resampled).items()))
+#print(sorted(Counter(y_resampled).items()))
 
 #sm= SMOTE(sampling_strategy=0.3)
 #print('Original dataset shape %s' % Counter(y_train))
@@ -1078,27 +1082,54 @@ preprocessing = ColumnTransformer([
     ("ord", ord_pipeline, ord_cols)
 ])
 
-lr = LogisticRegression(random_state=42)
-lr_clf_us = imbPipeline([
+X_processed = pd.DataFrame(preprocessing.fit_transform(X_train, y_train), index = X_train.index, columns = preprocessing.get_feature_names_out())
+X_processed
+lr = LogisticRegression(random_state=42, penalty = None, class_weight="balanced")
+lr_clf = Pipeline([
 ("pre_processing", preprocessing),
-("under_sampling",rus),
 ("logistic_regression", lr)
 ])
-lr_clf_us.fit(X_train, y_train)
 
-lr_cv_us = cross_val_score(lr_clf_us, X_train, y_train, cv = 5, scoring = "f1")
+lr_us = LogisticRegression(random_state=42, penalty = None)
+lr_clf_us = Pipeline([
+("pre_processing", preprocessing),
+("logistic_regression", lr_us)
+])
+
+lr_clf_us1 = imbPipeline([
+("sampling", rus),
+("pre_processing", preprocessing),
+("logistic_regression", lr_us)
+])
+# #lr_clf_us.fit(X_train, y_train)
+lr_cv = cross_val_score(lr_clf, X_train, y_train, cv = 5, scoring = "f1")
+lr_cv
+
+
+lr_cv_us = cross_val_score(lr_clf_us, X_resampled, y_resampled, cv = 5, scoring = "f1")
 lr_cv_us
+
+lr_cv_us1 = cross_val_score(lr_clf_us1, X_train, y_train, cv = 5, scoring = "f1")
+lr_cv_us1
+
+print(f"f1 scores with original imbalanced data: {lr_cv}")
+print(f"f1 scores with undersampled balanced data: {lr_cv_us}")
+print(f"f1 scores with undersampling included in pipeline: {lr_cv_us1}")
 ```
+
+I have found the cause of the error. When undersampling is being used in imbPipeline, it does not seem to be working!
 
 
 ```{python}
-y_pred_lr_us = cross_val_predict(lr_clf_us, X_train, y_train, cv = 5)
+y_pred_lr_us = cross_val_predict(lr_clf_us, X_resampled, y_resampled, cv = 5)
 ```
 
 ```{python}
 print("Logistic Regression classification report for manual columns")
-Markdown(classification_report(y_train, y_pred_lr_us))
+Markdown(classification_report(y_resampled, y_pred_lr_us))
 ```
+
+
 
 ## Error analysis - let's look at false positives and false negatives in the data
 ```{python}
