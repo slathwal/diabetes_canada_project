@@ -37,6 +37,9 @@ from collections import Counter
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline, FunctionTransformer
 from src.data_plotting import plot_precision_recall_curve
+from sklearn.model_selection import learning_curve
+from sklearn.metrics import precision_score, recall_score, classification_report
+from IPython.display import Markdown
 ```
 
 # Import the data and keep only the relevant rows
@@ -171,6 +174,9 @@ ax.set_title("Confusion matrix normalized by true label values")
 fig, ax = plt.subplots()
 ConfusionMatrixDisplay.from_predictions(y_resampled, y_pred_lr, normalize = "pred", values_format="0.2%", ax = ax)
 ax.set_title("Confusion matrix normalized by predicted label values")
+
+print("Logistic Regression classification report on imbalanced test data")
+Markdown(classification_report(y_resampled, y_pred_lr))
 ```
 
 # Plot the precision recall curve
@@ -193,4 +199,89 @@ ax.set_title("Absolute coefficients of top 20 features in the Logistic Regressio
 ax.legend("")
 ax.set_xlabel("Absolute Value of Coefficient")
 plt.show()
+```
+
+# Plot the learning curve for Logistic Regression model
+```{python}
+train_sizes, train_scores, valid_scores = learning_curve(
+    lr_clf, X_resampled, y_resampled, train_sizes=np.linspace(0.01, 1.0, 10), cv=5,
+    scoring="f1")
+train_sizes, train_scores, valid_scores
+```
+
+```{python}
+train_errors = train_scores.mean(axis=1)
+valid_errors = valid_scores.mean(axis=1)
+train_errors, valid_errors
+fig, ax = plt.subplots()
+ax.plot(train_sizes, train_errors, "r-+", linewidth=2, label="train")
+ax.plot(train_sizes, valid_errors, "b-", linewidth=3, label="valid")
+ax.legend()
+ax.set_title("Learning curves for Logistic Regression on balanced data (5-fold CV)")
+ax.set_ylabel("F1 score")
+ax.set_xlabel("Training data size")
+plt.show()
+```
+
+- The learning curves show that there is still room for some improvement if we increase the data because they have not plateaued yet.
+- The learning curves show that there is not much overfitting as the performance on training and validation sets are quite similar when full data are used.
+
+# Check performance on the test dataset
+```{python}
+y_pred_lr_test = lr_clf.predict(X_test)
+```
+
+```{python}
+precision = precision_score(y_test, y_pred_lr_test)
+recall = recall_score(y_test, y_pred_lr_test)
+f1 = 2*precision*recall/(precision+recall)
+
+print(f"Precision: {precision:.2f}")
+print(f"Recall: {recall:.2f}")
+print(f"F1 score: {f1:.2f}")
+
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_test, y_pred_lr_test, ax = ax)
+
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_test, y_pred_lr_test, normalize = "true", values_format="0.2%", ax = ax)
+ax.set_title("Confusion matrix normalized by true label values")
+
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_test, y_pred_lr_test, normalize = "pred", values_format="0.2%", ax = ax)
+ax.set_title("Confusion matrix normalized by predicted label values")
+
+print("Logistic Regression classification report on imbalanced test data")
+Markdown(classification_report(y_test, y_pred_lr_test))
+```
+
+# Check performance on balanced test data
+```{python}
+rus = RandomUnderSampler(random_state=0)
+X_resampled_test, y_resampled_test = rus.fit_resample(X_test, y_test)
+y_pred_lr_resampled_test = lr_clf.predict(X_resampled_test)
+```
+
+```{python}
+precision = precision_score(y_resampled_test, y_pred_lr_resampled_test)
+recall = recall_score(y_resampled_test, y_pred_lr_resampled_test)
+f1 = 2*precision*recall/(precision+recall)
+
+print(f"Precision: {precision:.2f}")
+print(f"Recall: {recall:.2f}")
+print(f"F1 score: {f1:.2f}")
+
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_resampled_test, y_pred_lr_resampled_test, ax = ax)
+
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_resampled_test, y_pred_lr_resampled_test, normalize = "true", values_format="0.2%", ax = ax)
+ax.set_title("Confusion matrix normalized by true label values")
+
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_resampled_test, y_pred_lr_resampled_test, normalize = "pred", values_format="0.2%", ax = ax)
+ax.set_title("Confusion matrix normalized by predicted label values")
+
+print("Logistic Regression classification report on imbalanced test data")
+Markdown(classification_report(y_resampled_test, y_pred_lr_resampled_test))
 ```

@@ -75,5 +75,10 @@ The main goal of this project is to understand the following:
     - I don't think combining models would do much in this case.
     - I think I will also check a few other models like kNN classifier (kNN would not be good here because) and SVC, and perhaps try a dimensional reduction method, do error analysis on those with the 3 feature dataset and finalize the model. - TO DO
 
+    2025/05/20
+    - I calculate the maximum precision, recall and f1 score that can be obtained in the data manually. I was able to do this because my data consist of discrete value columns and it is possible to manually classify them. I picked two columns and calculated the theoretical maximum. 
+    - I then resampled the data and fit a logistic regression model with limited features
+    - To my surprise, I discovered that the f1 score was close to theoretical maximum
+
     
    
