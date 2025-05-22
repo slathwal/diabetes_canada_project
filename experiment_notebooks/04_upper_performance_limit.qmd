@@ -292,3 +292,6 @@ lr_cv = cross_validate(lr_clf, X_resampled,y_resampled, cv = 5, scoring = ["neg_
 y_pred_lr = cross_val_predict(lr_clf, X_resampled, y_resampled, cv = 5)
 lr_cv
 ```
+
+
+Ok, so I have confirmed that whether I use undersampling before or after pre_processing (missing value imputation, rescaling), I get similar performance, which matches the max possible performance on the data.

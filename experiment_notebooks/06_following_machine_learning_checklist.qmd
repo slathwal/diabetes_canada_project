@@ -167,7 +167,7 @@ y_train.sum(), y_test.sum()
 
 ## 6. Study the correlation between attributes.
 
-## 7. Study how you would solve the problem amnually.
+## 7. Study how you would solve the problem manually.
 
 ## 8. Study the promising transformations you may want to apply.
 

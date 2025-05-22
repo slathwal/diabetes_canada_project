@@ -1,0 +1,177 @@
+---
+title: "End-to-end pipeline for prediction of diabetes status from Canadian Community Health Survey Data"
+author: "Shefali Lathwal"
+date: "2025-05-21"
+date-modified: last-modified
+toc: true
+format: html
+jupyter: python3
+echo: true
+---
+
+# Go to root directory of the project
+```{python}
+import os
+os.chdir(os.path.abspath(".."))
+```
+
+# Import required libraries
+```{python}
+import pandas as pd
+import matplotlib.pyplot as plt
+from src.data_preparation import keep_known_codes_in_column, remove_known_codes_in_column
+from src.data_preparation import convert_missing_codes_to_na
+from src.data_preparation import separate_df_into_train_and_test
+from sklearn.model_selection import train_test_split
+from imblearn.under_sampling import RandomUnderSampler
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import ConfusionMatrixDisplay
+from sklearn.model_selection import cross_val_predict, cross_val_score, cross_validate
+from sklearn.utils import shuffle
+from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
+from src.data_preparation import return_columns_with_missing_data, cols_with_zero_variance, additional_cols_to_exclude, cols_with_high_correlation
+from imblearn.under_sampling import RandomUnderSampler
+from collections import Counter
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline, FunctionTransformer
+from src.data_plotting import plot_precision_recall_curve
+```
+
+# Import the data and keep only the relevant rows
+Keep data with only known diabetes status and adults (age 18+)
+```{python}
+df = pd.read_csv("/Users/shefalilathwal/Documents/diabetes_canada_project/data/pumf_cchs.csv")
+
+target_col = "CCC_095" # Column with diabetes status
+# Only keeping rows with a known diabetes status - 1 or 2
+df = keep_known_codes_in_column(df, target_col, [1.0, 2.0])
+
+# Removing rows for youth (< 18 years of age), code = 1
+df = remove_known_codes_in_column(df, "DHHGAGE", [1.0])
+print(df.shape)
+```
+
+# Split the data into training and test sets
+```{python}
+df_train_set, df_test_set = train_test_split(df, test_size = 0.3, random_state = 42, shuffle = True, stratify = df[target_col])
+
+X_train, y_train = separate_df_into_train_and_test(df_train_set, target_col)
+X_test, y_test = separate_df_into_train_and_test(df_test_set, target_col)
+
+# Convert the target variable into True and False
+y_train, y_test = (y_train == 1), (y_test == 1)
+print(f"Distribution of classes in training data: {sorted(Counter(y_train).items())}")
+```
+
+# Collect features to drop from the dataset
+Drop features with:
+- more than 30% data missing
+- with same value in all rows
+- used as flag or as numbers
+- with high correlation with other features
+```{python}
+cols_to_exclude = additional_cols_to_exclude(X_train)
+cols_to_drop = cols_to_exclude
+X_train = X_train.drop(columns = cols_to_drop, inplace = False)
+X_test = X_test.drop(columns = cols_to_drop, inplace = False)
+print(cols_to_drop)
+
+cols_with_30_pct_missing_data = return_columns_with_missing_data(X_train, pct_threshold=30)
+
+cols_to_drop = cols_with_30_pct_missing_data
+X_train = X_train.drop(columns = cols_to_drop, inplace = False)
+X_test = X_test.drop(columns = cols_to_drop, inplace = False)
+print(cols_to_drop)
+
+zero_variance_cols = cols_with_zero_variance(X_train)
+
+cols_to_drop = zero_variance_cols
+X_train = X_train.drop(columns = cols_to_drop, inplace = False)
+X_test = X_test.drop(columns = cols_to_drop, inplace = False)
+print(cols_to_drop)
+
+
+ord_cols = ["INCDGRRS", "INCDGRPR", "INCDGRCA", "INCDGHH", "FSCDVHF2","FSCDVAF2", "PNCDVNED", "PNCDVPNO", "PNCDVPNC", "PNCDVPNM", "PNCDVPNI", "PNCDVHCT", "PHC_035", "ALCDVTTM","ALC_020", "ALC_015", "SMKDVSTY", "SMK_005","GENDVSWL","GENDVMHI","GENDVHDI","GEN_030","GEN_020","GEN_015","GEN_010","GEN_005","EHG2DVH3","DHHGAGE"]
+cat_cols = [col for col in X_train.columns if col not in ord_cols]
+
+ord_cols_to_drop, cat_cols_to_drop = cols_with_high_correlation(X_train, ord_cols, cat_cols, corr_threshold=0.7)
+corr_cols_to_drop = ord_cols_to_drop+cat_cols_to_drop
+cols_to_drop = corr_cols_to_drop
+X_train = X_train.drop(columns = cols_to_drop, inplace = False)
+X_test = X_test.drop(columns = cols_to_drop, inplace = False)
+
+ord_cols_mod = [col for col in ord_cols if col not in ord_cols_to_drop]
+cat_cols_mod = [col for col in cat_cols if col not in cat_cols_to_drop]
+```
+
+# Undersample the majority class to balance both classes in the training data
+```{python}
+rus = RandomUnderSampler(random_state=0)
+X_resampled, y_resampled = rus.fit_resample(X_train, y_train)
+print(f"Number of features in the data: {X_train.shape[1]}")
+print(f"Nubmer of rows in the training data: {X_train.shape[0]}")
+print(f"Distribution of classes: {sorted(Counter(y_resampled).items())}")
+```
+
+# Define the pre-processing pipeline for ordinal and categorical variables
+```{python}
+ord_pipeline = Pipeline([
+    ("convert_to_na", FunctionTransformer(func = convert_missing_codes_to_na, feature_names_out="one-to-one")),
+    ("fill_na", SimpleImputer(strategy='most_frequent', add_indicator = False)),
+    ("min_max_scaler", MinMaxScaler())
+    ])
+cat_pipeline = Pipeline([
+    ("convert_to_na", FunctionTransformer(func = convert_missing_codes_to_na, feature_names_out="one-to-one")),
+    ("fill_na", SimpleImputer(strategy = "most_frequent", add_indicator = False)),
+    ("one_hot_encoder", OneHotEncoder(sparse_output=False, handle_unknown="ignore", drop = "first"))
+])
+
+
+preprocessing = ColumnTransformer([
+    ("cat", cat_pipeline, cat_cols_mod),
+    ("ord", ord_pipeline, ord_cols_mod)
+])
+
+X_processed = pd.DataFrame(preprocessing.fit_transform(X_train, y_train), index = X_train.index, columns = preprocessing.get_feature_names_out())
+X_processed
+```
+
+# Fit a logistic regression model
+```{python}
+lr = LogisticRegression(random_state=42, penalty = None)
+lr_clf = Pipeline([
+("pre_processing", preprocessing),
+("logistic_regression", lr)
+])
+
+lr_cv = cross_validate(lr_clf, X_resampled, y_resampled, cv = 5, scoring = ["neg_log_loss", "f1", "precision", "recall"])
+
+lr_cv
+```
+
+# Get the predicted labels and probabilities from the fitted model using cross_val_predict
+```{python}
+y_pred_lr = cross_val_predict(lr_clf, X_resampled, y_resampled, cv = 5)
+y_scores_lr = cross_val_predict(lr_clf, X_resampled, y_resampled, cv = 5, method = "predict_proba")
+```
+
+# Visualize the confusion matrix
+```{python}
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_resampled, y_pred_lr, ax = ax)
+
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_resampled, y_pred_lr, normalize = "true", values_format="0.2%", ax = ax)
+ax.set_title("Confusion matrix normalized by true label values")
+
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_resampled, y_pred_lr, normalize = "pred", values_format="0.2%", ax = ax)
+ax.set_title("Confusion matrix normalized by predicted label values")
+```
+
+# Plot the precision recall curve
+```{python}
+fig, ax = plt.subplots()
+plot_precision_recall_curve("Logistic Regression with Balanced Classes", y_resampled, y_scores_lr[:, 1], ax = ax)
+```
