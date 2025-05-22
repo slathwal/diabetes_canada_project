@@ -34,51 +34,62 @@ The main goal of this project is to understand the following:
 
 ## Working Notes
 
-1. **Exploratory Data Analysis (EDA)**
-   - Examined data distributions, correlations, and potential predictors
-   - Looked at prevalence of diabetes across provinces, by age group, by sex, by household income.
-   - Identified important variables
-   - Handled missing values
-   - Developed a baseline model
-        - One-hot encoding of categorical variables
-        - Standardization or normalization where applicable
-        - Boolean outcome variable for diabetes diagnosis
-        - Evaluation metrics: F1 score, precision, recall
-        - Handling class imbalance
-        - Tried Logistic Regression, SVC and RandomForest
+2025/05/21
 
-2. **Improving the model(s)**
-    - So far (2025/05/17) the performance of linear models (Logistic Regression) is similar to more complex models (RandomForest and XGBoost) 
-    - Fine-tuning the models:
-        - Tried XGBoost, RandomForest, LogisticRegression - the performance of RandomForest improved with finetuning, reaching an f1 score of 0.42
-    - Better data pre-processing
-        - Treat ordinal features as categorical - no change
-        - Remove features that have low variance - no features with low variance
-        - Remove features that are highly correlated - TO DO
-            - Looked at what measures of correlation to use for ordinal and categorical/nominal data.
-        - Peform automated feature selection - TO DO
-    - Error Analysis - TO DO
-    - Look at learning curves on training and validation data - TO DO
-    - Try combining models to improve performance - TO DO
+- I calculate the maximum precision, recall and f1 score that can be obtained in the data manually. I was able to do this because my data consist of discrete value columns and it is possible to manually classify them. I picked two columns and calculated the theoretical maximum. 
+- I then resampled the data and fit a logistic regression model with limited features
+- To my surprise, I discovered that the f1 score was close to theoretical maximum if the classes were balanced.
+- I am not sure how to calculate a theoretical maximum if classes are not balanced.
+- I discovered that when I tried undersampling yesterday, I used it in a pipeline from the package `imblearn` and that was not working. If I resampled data separately and then built a logistic regression model on resampled, balanced data, I was able to achieve the theoretical maximum.
+- I have added a notebook with the finalized steps.
+- I have also put the data cleaning functions in the src folder and imported those functions in the notebook to use.
 
-    2025/05/20
+2025/05/20
   
-    - I plotted learning curves for three types of models - linear Logistic Regression, RandomForest, gradient boosting (lightGBM).
-        - lightGBM and logistic regression are underfitting, and their validation errors are plateauing very early (with 10000 data points, instead of 69000 that are in the training set.)
-        - random forest is overfitting the data a lot, so not using it going forward.
-    - I looked at highly correlated features and removed them. I also tried recursive feature elimination and that showed that a maximum of 10 features is good enough to reach max performance in logistic regression.
-    - I also tried to use selectKBest features and that also does not improve the model much  with increasing number of features.
-    -   - Selected a small number of features - 3 - to examine the errors in the model in detail. Even with three features, the f1 score for logistic regression and lightGBM is 0.36.
-    - I performed error analysis on this model and found that for lightGBM, the performance of the model is maximized. because the features are all categorical, the model has to choose combinations of features to make a prediction. As long as the model is choosing the combination that maximizes precision and recall, it works and lightGBM seems to be doing that.
-    - I also tried balancing the dataset with RandomUnderSampling and that also does not make any difference in the performance.
-    - Because all features are categorical, there is a limit to max performance, which is clear using a small number of variables.
-    - I don't think combining models would do much in this case.
-    - I think I will also check a few other models like kNN classifier (kNN would not be good here because) and SVC, and perhaps try a dimensional reduction method, do error analysis on those with the 3 feature dataset and finalize the model. - TO DO
+- I plotted learning curves for three types of models - linear Logistic Regression, RandomForest, gradient boosting (lightGBM).
+    - lightGBM and logistic regression are underfitting, and their validation errors are plateauing very early (with 10000 data points, instead of 69000 that are in the training set.)
+    - random forest is overfitting the data a lot, so not using it going forward.
+- I looked at highly correlated features and removed them. I also tried recursive feature elimination and that showed that a maximum of 10 features is good enough to reach max performance in logistic regression.
+- I also tried to use selectKBest features and that also does not improve the model much  with increasing number of features.
+-   - Selected a small number of features - 3 - to examine the errors in the model in detail. Even with three features, the f1 score for logistic regression and lightGBM is 0.36.
+- I performed error analysis on this model and found that for lightGBM, the performance of the model is maximized. because the features are all categorical, the model has to choose combinations of features to make a prediction. As long as the model is choosing the combination that maximizes precision and recall, it works and lightGBM seems to be doing that.
+- I also tried balancing the dataset with RandomUnderSampling and that also does not make any difference in the performance.
+- Because all features are categorical, there is a limit to max performance, which is clear using a small number of variables.
+- I don't think combining models would do much in this case.
+- I think I will also check a few other models like kNN classifier (kNN would not be good here because) and SVC, and perhaps try a dimensional reduction method, do error analysis on those with the 3 feature dataset and finalize the model. - TO DO
 
-    2025/05/20
-    - I calculate the maximum precision, recall and f1 score that can be obtained in the data manually. I was able to do this because my data consist of discrete value columns and it is possible to manually classify them. I picked two columns and calculated the theoretical maximum. 
-    - I then resampled the data and fit a logistic regression model with limited features
-    - To my surprise, I discovered that the f1 score was close to theoretical maximum
+2025/05/17
+- So far the performance of linear models (Logistic Regression) is similar to more complex models (RandomForest and XGBoost) 
+- Fine-tuning the models:
+    - Tried XGBoost, RandomForest, LogisticRegression - the performance of RandomForest improved with finetuning, reaching an f1 score of 0.42
+- Better data pre-processing
+    - Treat ordinal features as categorical - no change
+    - Remove features that have low variance - no features with low variance
+    - Remove features that are highly correlated - TO DO
+        - Looked at what measures of correlation to use for ordinal and categorical/nominal data.
+    - Peform automated feature selection - TO DO
+- Error Analysis - TO DO
+- Look at learning curves on training and validation data - TO DO
+- Try combining models to improve performance - TO DO
+
+2025/05/11-16
+
+- Examined data distributions, correlations, and potential predictors
+- Looked at prevalence of diabetes across provinces, by age group, by sex, by household income.
+- Identified important variables
+- Handled missing values
+- Developed a baseline model
+    - One-hot encoding of categorical variables
+    - Standardization or normalization where applicable
+    - Boolean outcome variable for diabetes diagnosis
+    - Evaluation metrics: F1 score, precision, recall
+    - Handling class imbalance
+    - Tried Logistic Regression, SVC and RandomForest
+
+   
+
+
+  
 
     
    
