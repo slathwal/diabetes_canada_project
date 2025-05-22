@@ -119,6 +119,53 @@ Note, that in the analysis above, there were 49 values in CCC_070 which were na 
 
 The above is eye-opening. My F1 score is stuck at 0.39, when theoretical maximum is at 0.72.
 
+# Calculate the above numbers with model trained on these data, but also including discarded data for evaluating
+```{python}
+# The resampled target
+y_resampled
+# original target
+y_train
+idx_included_rows = y_resampled.index
+idx_excluded_rows = [id for id in y_train.index if id not in idx_included_rows]
+len(idx_excluded_rows), len(idx_included_rows), len(y_train.index)
+
+X_train_excluded = X_train.loc[idx_excluded_rows,:]
+y_train_excluded = y_train.loc[idx_excluded_rows]
+X_train_excluded.shape, y_train_excluded.shape, y_train_excluded.sum()
+
+df_excluded_na = convert_missing_codes_to_na(pd.concat([X_train_excluded[cols_to_include],y_train_excluded], axis = 1))
+df_excluded_by_status = df_excluded_na.groupby(cols_to_include+[target_col], as_index = False).size()
+print(df_excluded_by_status)
+
+# Tabulating the numbers in excluded data
+group_1_excluded = {"tn": 116}
+group_2_excluded = {"tn": 9182}
+group_3_excluded = {"tn": 640}
+group_4_excluded = {"tn": 9284}
+group_5_excluded = {"fp": 2643}
+group_6_excluded = {"tn": 9246}
+group_7_excluded = {"fp": 11671}
+group_8_excluded = {"tn": 12771}
+
+groups_excluded = [group_1_excluded, group_2_excluded, group_3_excluded, group_4_excluded, group_5_excluded, group_6_excluded, group_7_excluded, group_8_excluded]
+
+final_numbers = {"tn": 0, "tp":0, "fn": 0, "fp": 0}
+for group in groups+groups_excluded:
+    for key in final_numbers.keys():
+        if key in group.keys():   
+            final_numbers[key] = final_numbers[key] + group[key]
+print(final_numbers)
+
+precision = final_numbers["tp"]/(final_numbers["tp"]+final_numbers["fp"]) 
+recall = final_numbers["tp"]/(final_numbers["tp"]+final_numbers["fn"])
+f1_score = 2*precision*recall/(precision+recall)
+
+print(f"Max Precision: {precision:.2f}")
+print(f"Max Recall: {recall:.2f}")
+print(f"Max F1 score: {f1_score:.2f}")
+
+```
+
 # Repeat the analysis for a maximum theoretical value with imputation of missing na values in CCC_070
 ```{python}
 print(df_resampled_na.shape)
