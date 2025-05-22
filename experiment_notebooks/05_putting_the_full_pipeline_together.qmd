@@ -19,6 +19,7 @@ os.chdir(os.path.abspath(".."))
 ```{python}
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 from src.data_preparation import keep_known_codes_in_column, remove_known_codes_in_column
 from src.data_preparation import convert_missing_codes_to_na
 from src.data_preparation import separate_df_into_train_and_test
@@ -152,6 +153,8 @@ lr_cv
 
 # Get the predicted labels and probabilities from the fitted model using cross_val_predict
 ```{python}
+# Fit the model to the whole training data
+lr_clf.fit(X_resampled, y_resampled)
 y_pred_lr = cross_val_predict(lr_clf, X_resampled, y_resampled, cv = 5)
 y_scores_lr = cross_val_predict(lr_clf, X_resampled, y_resampled, cv = 5, method = "predict_proba")
 ```
@@ -174,4 +177,20 @@ ax.set_title("Confusion matrix normalized by predicted label values")
 ```{python}
 fig, ax = plt.subplots()
 plot_precision_recall_curve("Logistic Regression with Balanced Classes", y_resampled, y_scores_lr[:, 1], ax = ax)
+```
+
+# Get the most important features 
+```{python}
+coefficients = np.abs(lr_clf[1].coef_[0])
+# # Display feature importance using coefficients and odds ratios
+feature_importance_lr = pd.DataFrame({
+    'Feature': lr_clf[0].get_feature_names_out(),
+    'Coefficient': coefficients
+}).sort_values(by='Coefficient', ascending=True)[-20:]
+fig, ax = plt.subplots()
+feature_importance_lr.plot(kind = "barh", ax = ax, x = "Feature")
+ax.set_title("Absolute coefficients of top 20 features in the Logistic Regression Model")
+ax.legend("")
+ax.set_xlabel("Absolute Value of Coefficient")
+plt.show()
 ```
