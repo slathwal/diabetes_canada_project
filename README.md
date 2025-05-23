@@ -4,23 +4,20 @@ Note: This file is being edited.
 
 This project explores and builds a predictive model for identifying individuals at risk for diabetes, using data from the [**Canadian Community Health Survey (CCHS) Public Use Microdata File (PUMF)**](https://www150.statcan.gc.ca/n1/en/catalogue/82M0013X) for the years 2019-2020. The survey is broad and contains more than 600 questions on a variety of topics such as geographical location, demographics, general health, general mental health, education, chronic conditions (including diabetes), lifestyle factors such as fruit and vegetable consumption, smoking, alcohol use, drug use, physical activity, sedentary behaviours, sexual behaviours etc., engagement with healthcare system, screening test, involvement with community, socio-demographic characteristics such as country of birth, immigration status etc., health insurance, food security, household income and many more.
 
-- The project includes exploratory analysis to identify the best methods for data pre-processing, and implements machine learning methods such as Logistic Regression, SupportVectorClassifier and LightGBM to predict the presence of diabetes in a survey respondent, and to identify the most important features asssociated with the prediction.
+- The project includes exploratory analysis to identify the best methods for data pre-processing, and implements machine learning methods such as Logistic Regression, SupportVectorClassifier and LightGBM to predict the presence of diabetes in survey respondents, and to identify the most important features asssociated with the prediction.
 
 - Feature selection and undersampling are used to balance the classes in the dataset. 
 
 - Precision recall curves and F1 score are used to assess and compare different models.
 
-- The project shows that general purpose survey data can be used to recover important factors associated with chronic conditions such as diabetes, but the predictive models built on these data suffer from low precision, i.e., a large number of false postives.
+- The project shows that general purpose survey data can be used to recover important factors associated with chronic conditions such as diabetes, but the predictive models built on these data suffer from low precision when data are unbalanced (less positive cases compared to negative cases), i.e., a large number of false postives.
 
 ***
 ## Content
-1. [WIP - Introduction](#introduction)
-2. [Objectives](#objectives)
+2. [Objective](#objectives)
 3. [WIP - Methodology](#methodology)
 4. [WIP - Results](#results)
 5. [WIP - Working Notes](#working-notes)
-
-## Introduction
 
 ## Objectives
 
@@ -30,7 +27,24 @@ The main goal of this project is to understand the following:
 
 ## Methodology
 
+**Exploratory Data Analysis**
+1. Understand the variables present in the data
+2. Filter the data to include only adults and people with known diabetes status.
+3. Calculate missing values for each variable and remove variables with >30% missing data
+4. Remove variables that have same value across all rows and that have different values across all rows, as well as variables that do not contain any useful information.
+5. Identify ordinal and categorical variables, calculate correlation between all variables and drop highly correlated variables.
+6. Undersample the data to balance classes.
+7. Pre-process the data.
+8. Fit a model
+9. Evaluate the model fit and its performance.
+10. Identify the most important features contributing to prediction of diabetes status.
+
 ## Results
+
+1. Understanding the performance limit of a predicitve model on the data
+2. Logistic regression model
+3. Support Vector Classifier
+4. LightGBM
 
 ## Working Notes
 
