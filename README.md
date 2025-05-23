@@ -23,7 +23,7 @@ This project explores and builds a predictive model for identifying individuals 
 
 The main goal of this project is to understand the following:
 
-**Can a general community health survey data be used to extract useful information abut factors associated with a chronic condition such as diabetes?**
+**Can a general community health survey data be used to extract useful information about factors associated with a chronic condition such as diabetes?**
 
 ## Methodology
 
