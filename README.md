@@ -14,12 +14,13 @@ This project explores and builds a predictive model for identifying individuals 
 
 ***
 ## Content
-2. [Objective](#objectives)
-3. [WIP - Methodology](#methodology)
-4. [WIP - Results](#results)
+1. [Objective](#objectives)
+2. [WIP - Methodology](#methodology)
+3. [WIP - Results](#results)
+4. [WIP - Conclusions](#conclusions)
 5. [WIP - Working Notes](#working-notes)
 
-## Objectives
+## Objective
 
 The main goal of this project is to understand the following:
 
@@ -28,25 +29,127 @@ The main goal of this project is to understand the following:
 ## Methodology
 
 **Exploratory Data Analysis**
-1. Understand the variables present in the data
-2. Filter the data to include only adults and people with known diabetes status.
-3. Calculate missing values for each variable and remove variables with >30% missing data
-4. Remove variables that have same value across all rows and that have different values across all rows, as well as variables that do not contain any useful information.
-5. Identify ordinal and categorical variables, calculate correlation between all variables and drop highly correlated variables.
-6. Undersample the data to balance classes.
-7. Pre-process the data.
-8. Fit a model
-9. Evaluate the model fit and its performance.
-10. Identify the most important features contributing to prediction of diabetes status.
+
+- Understand the variables present in the data
+The data consist of 691 variables. All variables contained data encoded as numbers. It was important to use the data dictionary given along with the data to understand what the codes meant. These variables span categories such as the following:
+1.  Residence location - state
+2.  Residence health region
+3.  Sex
+4.  marital Status
+5.  Household size
+6.  Age
+7.  Worked at job/business
+8.  Level of education
+9.  General Health
+10. Height and weight perceived
+11. Chronic conditions
+12. health utility index
+13. changes made to improve health
+14. fruit and vegetable consumption
+15. Canada's Food guide use
+16. smoking
+17. Tobacco product alternatives
+18. exposure to second hand smoke
+19. alcohol use
+20. alcohol use - weekly
+21. antibiotic medication use
+22. cannabis use
+23. severity of dependence on cannabis
+24. drug use
+25. Physical activity for adults
+26. physical activity for youth
+27. sendetary behaviours
+28. sexual behavious
+29. driving and safety
+30. driving while under influence
+31. flu shots
+32. blood pressure check
+33. had mammogram
+34. colorectal cancer testing
+35. consultation about mental health
+36. satisfaction with life
+37. depression
+38. suicidal thoughts and attempts
+39. social provisions
+40. primary health care
+41. medical doctor attachment
+42. contact with healthcare professionals
+43. perceived need for care
+44. patient satisfaction - community based care
+45. patient experience
+46. unmet healthcare needs
+47. working status and working hours last week
+48. socio-demographic characteristics
+49. person most knowledgeable about household
+50. health insurance coverage
+51. food security
+52. total household income
+
+We need some way to reduce these variables for the predictive model.
+
+- Filter the data to include only adults and people with known diabetes status.
+
+As a first step, data were included for the adult population (age 18+) and for people whose diabetes status was known.
+
+- Separate the data into training and test sets
+At this stage, 30% of the data were kept aside as test set. I made sure to do a stratified split of the data to ensure that the ratio of diabetes to non-diabetes cases was the same in training data and test data.
+The rest of the steps were performed with the training data.
+
+- Calculate missing values for each variable and remove variables with >30% missing data
+
+A key observation was that missing data was encoded as numerical codes. The exact code used varied from feature to feature, but missing data categories were the same across the data. These categories were:
+1. Valid skip
+2. Don't know
+3. Refusal
+4. Not stated
+The codes used ranged from 6-9, 96-99, 996-999, 9996-9999, 999.6 to 999.9 etc. I wrote a function to identify the missing codes in each column and convert them to na values. Then the percentage of data missing for each feature was calculcated and 
+the features with more than 30% missing data were excluded.
+
+
+- Remove variables that have same value across all rows and that have different values across all rows, as well as variables that do not contain any useful information.
+
+
+- Identify ordinal and categorical variables, calculate correlation between all variables and drop highly correlated variables.
+
+Out of the remaining variables, I plotted each of them to identify which ones were ordinal, i.e., where numeric codes had an order and which were nominal/categorical, i.e., the numeric codes did not have an order. For example, sex is a nominal column and houshold income is an ordinal column.
+
+- Undersample the data to balance classes.
+The training data had ~6900 diabetes cases and a much higher number of non-diabetes cases. Therefore, I undersampled the non-diabetes cases to balance the classes and get a total of ~13400 training samples.
+
+- Pre-process the data
+1. Ordinal columns: For ordinal columns, I convert the missing data numeric codes to na values, impute the missing data using most-frequent value, and scale the data using min-max scaler
+2. For nominal/categorical columns, I convert the missing data numeric codes to na values, impute the missing data using most-frequent value and use one-hot encoding.
+
+- Fit a model
+I tried four different models on the data:
+1. Logistic Regression
+2. RandomForest
+3. Support Vector Classifier
+4. CatBoost
+
+- Evaluate the model fit and its performance.
+I evaluated the models using cross-validation. In particular, for each of the models, the following were examined:
+1. The learning curves on training set and validation set. these were used to evaluate if the model was overfitting the data or not.
+2. Confusion matrix to identify false positives and false negatives
+3. Precision recall curve
+
+- Identify the most important features contributing to prediction of diabetes status.
+For each of the models that were not overfitting the data, the top 20 features were compared.
 
 ## Results
 
-1. Understanding the performance limit of a predicitve model on the data
-2. Logistic regression model
+1. Understanding the performance limit of a predicitve model on survey data
+2. Logistic Regression model
+3. Random Forest model
 3. Support Vector Classifier
-4. LightGBM
+4. Xgboost
+
+## Conclusions
 
 ## Working Notes
+
+2025/05/25
+
 
 2025/05/21
 
