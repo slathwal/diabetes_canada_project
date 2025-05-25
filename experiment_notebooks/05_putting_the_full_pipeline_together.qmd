@@ -28,7 +28,7 @@ from imblearn.under_sampling import RandomUnderSampler
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import ConfusionMatrixDisplay
-from sklearn.model_selection import cross_val_predict, cross_val_score, cross_validate
+from sklearn.model_selection import cross_val_predict, cross_val_score, cross_validate, StratifiedKFold, StratifiedShuffleSplit, RandomizedSearchCV
 from sklearn.utils import shuffle
 from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
 from src.data_preparation import return_columns_with_missing_data, cols_with_zero_variance, additional_cols_to_exclude, cols_with_high_correlation
@@ -40,6 +40,9 @@ from src.data_plotting import plot_precision_recall_curve
 from sklearn.model_selection import learning_curve
 from sklearn.metrics import precision_score, recall_score, classification_report
 from IPython.display import Markdown
+from scipy.stats import randint, uniform
+from sklearn.svm import SVC
+from xgboost import XGBClassifier
 ```
 
 # Import the data and keep only the relevant rows
@@ -154,7 +157,7 @@ lr_cv = cross_validate(lr_clf, X_resampled, y_resampled, cv = 5, scoring = ["neg
 lr_cv
 ```
 
-# Get the predicted labels and probabilities from the fitted model using cross_val_predict
+## Get the predicted labels and probabilities from the fitted model using cross_val_predict
 ```{python}
 # Fit the model to the whole training data
 lr_clf.fit(X_resampled, y_resampled)
@@ -162,7 +165,7 @@ y_pred_lr = cross_val_predict(lr_clf, X_resampled, y_resampled, cv = 5)
 y_scores_lr = cross_val_predict(lr_clf, X_resampled, y_resampled, cv = 5, method = "predict_proba")
 ```
 
-# Visualize the confusion matrix
+## Visualize the confusion matrix
 ```{python}
 fig, ax = plt.subplots()
 ConfusionMatrixDisplay.from_predictions(y_resampled, y_pred_lr, ax = ax)
@@ -179,13 +182,13 @@ print("Logistic Regression classification report on imbalanced test data")
 Markdown(classification_report(y_resampled, y_pred_lr))
 ```
 
-# Plot the precision recall curve
+## Plot the precision recall curve
 ```{python}
 fig, ax = plt.subplots()
 plot_precision_recall_curve("Logistic Regression with Balanced Classes", y_resampled, y_scores_lr[:, 1], ax = ax)
 ```
 
-# Get the most important features 
+## Get the most important features 
 ```{python}
 coefficients = np.abs(lr_clf[1].coef_[0])
 # # Display feature importance using coefficients and odds ratios
@@ -201,10 +204,14 @@ ax.set_xlabel("Absolute Value of Coefficient")
 plt.show()
 ```
 
-# Plot the learning curve for Logistic Regression model
+## Plot the learning curve for Logistic Regression model
 ```{python}
+cv = StratifiedKFold(n_splits = 5, shuffle=True, random_state = 30) # This is not leading stratified split for some reason.
+
+
+cv = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=30)
 train_sizes, train_scores, valid_scores = learning_curve(
-    lr_clf, X_resampled, y_resampled, train_sizes=np.linspace(0.01, 1.0, 10), cv=5,
+    lr_clf, X_resampled, y_resampled, train_sizes=np.linspace(0.01, 1.0, 10), cv=cv,
     scoring="f1")
 train_sizes, train_scores, valid_scores
 ```
@@ -225,6 +232,365 @@ plt.show()
 
 - The learning curves show that there is still room for some improvement if we increase the data because they have not plateaued yet.
 - The learning curves show that there is not much overfitting as the performance on training and validation sets are quite similar when full data are used.
+
+# Fit a random forest classifier for comparison
+```{python}
+from sklearn.ensemble import RandomForestClassifier
+
+rf = RandomForestClassifier(random_state=42, n_estimators=100)
+rf_clf = Pipeline([
+    ("pre_processing", preprocessing),
+    ("random_forest", rf)
+])
+
+rf_cv = cross_validate(rf_clf, X_resampled, y_resampled, cv=5, scoring=["neg_log_loss", "f1", "precision", "recall"])
+rf_cv
+```
+
+## Plot the learning curve for the Random Forest model
+
+```{python}
+cv = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=30)
+train_sizes, train_scores, valid_scores = learning_curve(
+    rf_clf, X_resampled, y_resampled, train_sizes=np.linspace(0.01, 1.0, 10), cv=cv,
+    scoring="f1")
+train_sizes, train_scores, valid_scores
+```
+
+```{python}
+train_errors = train_scores.mean(axis=1)
+valid_errors = valid_scores.mean(axis=1)
+train_errors, valid_errors
+fig, ax = plt.subplots()
+ax.plot(train_sizes, train_errors, "r-+", linewidth=2, label="train")
+ax.plot(train_sizes, valid_errors, "b-", linewidth=3, label="valid")
+ax.legend()
+ax.set_title("Learning curves for RandomForest on balanced data (5-fold CV)")
+ax.set_ylabel("F1 score")
+ax.set_xlabel("Training data size")
+plt.show()
+```
+
+The learning curve hows that the random forest model is overfitting the data. It classifies that training data perfectly and the performance on validation set also plateaus at a very small train size value. The overfitting on the training data shows that the random forest model needs to be regularized.
+
+## Tune the RandomForest model to reduce overfitting
+
+```{python}
+param_dist = {
+    'random_forest__n_estimators': randint(50, 100),              # Lower tree count to reduce complexity
+    'random_forest__max_depth': randint(3, 20),                   # Control tree depth
+    'random_forest__min_samples_split': randint(2, 20),           # Don't allow overly small splits
+    'random_forest__min_samples_leaf': randint(2, 20),            # Prevent small leaves
+    'random_forest__max_features': ['sqrt', 'log2', 0.1, 0.5, 0.8],# Control tree diversity
+    'random_forest__bootstrap': [True, False],                    # Bootstrap sampling or full sampling
+}
+
+cv = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=30)
+
+search_rf = RandomizedSearchCV(
+    estimator=rf_clf,
+    param_distributions=param_dist,
+    n_iter=50,                     # Adjust depending on time/resources
+    scoring='f1',                  # Or 'roc_auc', 'accuracy', etc.
+    cv=cv,
+    random_state=42,
+    verbose=1
+)
+
+search_rf.fit(X_resampled, y_resampled)
+best_rf_model = search_rf.best_estimator_
+print("Best Parameters:", search_rf.best_params_)
+print("Validation Score:", search_rf.best_score_)
+```
+
+## Learning curve for the tuned model
+```{python}
+cv = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=30)
+train_sizes, train_scores, valid_scores = learning_curve(
+    best_rf_model, X_resampled, y_resampled, train_sizes=np.linspace(0.01, 1.0, 10), cv=cv,
+    scoring="f1")
+print(train_sizes, train_scores, valid_scores)
+train_errors = train_scores.mean(axis=1)
+valid_errors = valid_scores.mean(axis=1)
+train_errors, valid_errors
+fig, ax = plt.subplots()
+ax.plot(train_sizes, train_errors, "r-+", linewidth=2, label="train")
+ax.plot(train_sizes, valid_errors, "b-", linewidth=3, label="valid")
+ax.legend()
+ax.set_title("Learning curves for RandomForest on balanced data (5-fold CV)")
+ax.set_ylabel("F1 score")
+ax.set_xlabel("Training data size")
+plt.show()
+```
+
+Even after tuning, the model random forest model is still overfitting, though the training curve is going down with more data. RandomForest model does not seem to be very useful for these data.
+
+## Get the predicted labels and probabilities from the fitted model using cross_val_predict
+
+```{python}
+
+rf_clf = best_rf_model
+rf_clf.fit(X_resampled, y_resampled)
+
+y_pred_rf = cross_val_predict(rf_clf, X_resampled, y_resampled, cv = 5)
+y_scores_rf = cross_val_predict(rf_clf, X_resampled, y_resampled, cv = 5, method = "predict_proba")
+```
+
+
+## Visualize the confusion matrix
+```{python}
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_resampled, y_pred_rf, ax = ax)
+
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_resampled, y_pred_rf, normalize = "true", values_format="0.2%", ax = ax)
+ax.set_title("Confusion matrix normalized by true label values")
+
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_resampled, y_pred_rf, normalize = "pred", values_format="0.2%", ax = ax)
+ax.set_title("Confusion matrix normalized by predicted label values")
+
+print("Random Forest classification report on imbalanced test data")
+Markdown(classification_report(y_resampled, y_pred_rf))
+```
+
+## Plot the precision recall curve
+
+```{python}
+fig, ax = plt.subplots()
+plot_precision_recall_curve("Random Forest with Balanced Classes", y_resampled, y_scores_rf[:, 1], ax = ax)
+ax.set_ylim(bottom = 0)
+```
+
+## Get the most important features
+
+```{python}
+importances = (rf_clf[1].feature_importances_)
+# # Display feature importance using coefficients and odds ratios
+feature_importance_rf = pd.DataFrame({
+    'Feature': rf_clf[0].get_feature_names_out(),
+    'Importance': importances
+}).sort_values(by='Importance', ascending=True)[-20:]
+fig, ax = plt.subplots()
+feature_importance_rf.plot(kind = "barh", ax = ax, x = "Feature")
+ax.set_title("Absolute coefficients of top 20 features in the Random Forest Model")
+ax.legend("")
+ax.set_xlabel("Feature Importance Value")
+plt.show()
+```
+
+# Fit a Support Vector Classifier on the data
+
+```{python}
+
+svc = SVC(probability=True, kernel = "linear",C =10, gamma = "scale", random_state = 40)
+svc_clf = Pipeline([
+("pre_processing", preprocessing),
+("svc", svc)
+])
+
+svc_cv = cross_validate(svc_clf, X_resampled, y_resampled, cv = 3, scoring = ["neg_log_loss", "f1", "precision", "recall"])
+
+svc_cv
+```
+
+## Plot the learning curve for the support vector classifier
+
+```{python}
+cv = StratifiedShuffleSplit(n_splits=4, test_size=0.25, random_state=30)
+train_sizes, train_scores, valid_scores = learning_curve(
+    svc_clf, X_resampled, y_resampled, train_sizes=np.linspace(0.01, 1.0, 5), cv=cv,
+    scoring="f1")
+train_sizes, train_scores, valid_scores
+
+train_errors = train_scores.mean(axis=1)
+valid_errors = valid_scores.mean(axis=1)
+train_errors, valid_errors
+fig, ax = plt.subplots()
+ax.plot(train_sizes, train_errors, "r-+", linewidth=2, label="train")
+ax.plot(train_sizes, valid_errors, "b-", linewidth=3, label="valid")
+ax.legend()
+ax.set_title("Learning curves for Support Vector Classifier on balanced data (4-fold CV)")
+ax.set_ylabel("F1 score")
+ax.set_xlabel("Training data size")
+plt.show()
+```
+
+The learning curves show that the SVC with rbf kernel is also overfitting the training data, though the curves have not plateaued yet and and the training f1 score is falling and validation score is increasing.
+
+## Tune the model?
+
+## Get the predicted labels and probabilities from the fitted model using cross_val_predict
+
+```{python}
+svc_clf.fit(X_resampled, y_resampled)
+y_pred_svc = cross_val_predict(svc_clf, X_resampled, y_resampled, cv = 3)
+y_scores_svc = cross_val_predict(svc_clf, X_resampled, y_resampled, cv = 3, method = "predict_proba")
+```
+
+## Visualize the confusion matrix
+
+```{python}
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_resampled, y_pred_svc, ax = ax)
+
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_resampled, y_pred_svc, normalize = "true", values_format="0.2%", ax = ax)
+ax.set_title("Confusion matrix normalized by true label values")
+
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_resampled, y_pred_svc, normalize = "pred", values_format="0.2%", ax = ax)
+ax.set_title("Confusion matrix normalized by predicted label values")
+
+print("Support Vector classification report on imbalanced test data")
+Markdown(classification_report(y_resampled, y_pred_svc))
+```
+
+## Plot the precision recall curve
+```{python}
+fig, ax = plt.subplots()
+plot_precision_recall_curve("Logistic Regression with Balanced Classes", y_resampled, y_scores_svc[:, 1], ax = ax)
+```
+
+
+
+# Fit catboost on the data
+
+```{python}
+from catboost import CatBoostClassifier
+
+
+cat_feature_indices = list(range(len(cat_cols_mod)))  # their positions after transformation
+
+ord_pipeline = Pipeline([
+    ("convert_to_na", FunctionTransformer(func = convert_missing_codes_to_na, feature_names_out="one-to-one")),
+    ("fill_na", SimpleImputer(strategy='most_frequent', add_indicator = False)),
+    ("min_max_scaler", MinMaxScaler())
+    ])
+cat_pipeline = Pipeline([
+    ("convert_to_na", FunctionTransformer(func = convert_missing_codes_to_na, feature_names_out="one-to-one")),
+    ("fill_na", SimpleImputer(strategy = "most_frequent", add_indicator = False))
+])
+
+# ("convert_to_string", FunctionTransformer(to_string, feature_names_out="one-to-one"))
+preprocessing = ColumnTransformer([
+    ("cat", cat_pipeline, cat_cols_mod),
+    ("ord", ord_pipeline, ord_cols_mod)
+])
+
+preprocessing.set_output(transform="pandas")
+
+
+
+
+# X_processed.info()
+X_processed = preprocessing.fit_transform(X_resampled, y_resampled)
+for col in X_processed.columns[cat_feature_indices]:
+    X_processed[col] = X_processed[col].astype(str)
+
+X_processed.info()
+
+catboost= CatBoostClassifier(
+        cat_features=cat_feature_indices,
+        iterations=1000,
+        depth=5,
+        learning_rate=0.005,
+        eval_metric='Logloss',
+        early_stopping_rounds=50,
+        random_seed=42,
+        verbose=100)
+
+cat_cv = cross_validate(catboost, X_processed, y_resampled, cv = 3, scoring = ["neg_log_loss", "f1", "precision", "recall"])
+
+cat_cv
+```
+
+
+## Plot the learning curve for catboost
+```{python}
+cv = StratifiedShuffleSplit(n_splits=4, test_size=0.25, random_state=30)
+train_sizes, train_scores, valid_scores = learning_curve(
+    catboost, X_processed, y_resampled, train_sizes=np.linspace(0.01, 1.0, 10), cv=cv,
+    scoring="f1")
+train_sizes, train_scores, valid_scores
+
+train_errors = train_scores.mean(axis=1)
+valid_errors = valid_scores.mean(axis=1)
+train_errors, valid_errors
+fig, ax = plt.subplots()
+ax.plot(train_sizes, train_errors, "r-+", linewidth=2, label="train")
+ax.plot(train_sizes, valid_errors, "b-", linewidth=3, label="valid")
+ax.legend()
+ax.set_title("Learning curves for Catboost on balanced data (5-fold CV)")
+ax.set_ylabel("F1 score")
+ax.set_xlabel("Training data size")
+plt.show()
+```
+
+The learning curve for catboost with a low learning rate slightly overfits the data, but provides a good overall fit.
+
+## Get the predicted labels and probabilities from the fitted model using cross_val_predict
+
+```{python}
+catboost.fit(X_processed, y_resampled)
+y_pred_cat = cross_val_predict(catboost, X_processed, y_resampled, cv = 5)
+y_scores_cat = cross_val_predict(catboost, X_processed, y_resampled, cv = 5, method = "predict_proba")
+```
+
+## Visualize the confusion matrix
+
+```{python}
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_resampled, y_pred_cat, ax = ax)
+
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_resampled, y_pred_cat, normalize = "true", values_format="0.2%", ax = ax)
+ax.set_title("Confusion matrix normalized by true label values")
+
+fig, ax = plt.subplots()
+ConfusionMatrixDisplay.from_predictions(y_resampled, y_pred_cat, normalize = "pred", values_format="0.2%", ax = ax)
+ax.set_title("Confusion matrix normalized by predicted label values")
+
+print("CatBoost classification report on balanced test data")
+Markdown(classification_report(y_resampled, y_pred_cat))
+```
+
+## Plot the precision recall curve
+
+```{python}
+fig, ax = plt.subplots()
+plot_precision_recall_curve("CatBoost with Balanced Classes", y_resampled, y_scores_cat[:, 1], ax = ax)
+ax.set_ylim(bottom = 0)
+```
+
+## Get the most important features 
+
+```{python}
+importances = catboost.get_feature_importance()
+importances
+# # Display feature importance using coefficients and odds ratios
+feature_importance_cat = pd.DataFrame({
+    'Feature': X_processed.columns,
+    'Importance': importances
+}).sort_values(by='Importance', ascending=True)[-20:]
+fig, ax = plt.subplots()
+feature_importance_cat.plot(kind = "barh", ax = ax, x = "Feature")
+ax.set_title("Absolute coefficients of top 20 features in the CatBoost Model")
+ax.legend("")
+ax.set_xlabel("Feature Importance")
+plt.show()
+```
+
+
+# Most important features in the data
+SVC and RandomForest Classifier are overfitting the data a lot. LogisticRegression and CatBoost as much better. Compare top20 features from LogisticRegression and CatBoost
+
+
+# Conclusions
+
+
+
+
 
 # Check performance on the test dataset
 ```{python}
