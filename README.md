@@ -31,6 +31,7 @@ The main goal of this project is to understand the following:
 **Exploratory Data Analysis**
 
 1. Understand the variables present in the data
+
 The data consist of 691 variables. All variables contained data encoded as numbers. It was important to use the data dictionary given along with the data to understand what the codes meant. These variables span categories such as location, demographics, work details, level of education, general health, general mental health, chronic disease, lifestyle factors such as exercise, diet, smoking, tobacco, cannabis, alcohol, drugs, access to primary health and other healthcare facilities, sense of connection to community and healthcare services, food security, income, health insurance etc.
 
 We need some way to reduce these variables for the predictive model.
@@ -40,6 +41,7 @@ We need some way to reduce these variables for the predictive model.
 As a first step, data were included for the adult population (age 18+) and for people whose diabetes status was known.
 
 3. Separate the data into training and test sets
+
 At this stage, 30% of the data were kept aside as test set. I made sure to do a stratified split of the data to ensure that the ratio of diabetes to non-diabetes cases was the same in training data and test data.
 The rest of the steps were performed with the training data.
 
@@ -62,6 +64,7 @@ the features with more than 30% missing data were excluded.
 Out of the remaining variables, I plotted each of them to identify which ones were ordinal, i.e., where numeric codes had an order and which were nominal/categorical, i.e., the numeric codes did not have an order. For example, sex is a nominal column and houshold income is an ordinal column.
 
 7. Undersample the data to balance classes.
+
 The training data had ~6900 diabetes cases and a much higher number of non-diabetes cases. Therefore, I undersampled the non-diabetes cases to balance the classes and get a total of ~13400 training samples.
 
 8. Pre-process the data
@@ -69,6 +72,7 @@ The training data had ~6900 diabetes cases and a much higher number of non-diabe
     2. For nominal/categorical columns, I convert the missing data numeric codes to na values, impute the missing data using most-frequent value and use one-hot encoding.
 
 9. Fit a model
+
 I tried four different models on the data:
     1. Logistic Regression
     2. RandomForest
@@ -76,12 +80,14 @@ I tried four different models on the data:
     4. CatBoost
 
 10. Evaluate the model fit and its performance.
+
 I evaluated the models using cross-validation. In particular, for each of the models, the following were examined:
     1. The learning curves on training set and validation set. these were used to evaluate if the model was overfitting the data or not.
     2. Confusion matrix to identify false positives and false negatives
     3. Precision recall curve
 
 11. Identify the most important features contributing to prediction of diabetes status.
+
 For each of the models that were not overfitting the data, the top 20 features were compared.
 
 ## Results
