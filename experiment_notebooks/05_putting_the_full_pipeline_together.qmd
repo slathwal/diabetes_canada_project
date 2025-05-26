@@ -583,13 +583,49 @@ plt.show()
 
 
 # Most important features in the data
-SVC and RandomForest Classifier are overfitting the data a lot. LogisticRegression and CatBoost as much better. Compare top20 features from LogisticRegression and CatBoost
+SVC and RandomForest Classifier are overfitting the data. LogisticRegression and CatBoost as much better. Compare top20 features from LogisticRegression and CatBoost
+
+```{python}
+common_important_features = [item for item in feature_importance_cat["Feature"][-10:] if feature_importance_lr["Feature"][-10:].str.contains(item).any()] 
+#item = "cat__DHH_SEX"
+#feature_importance_lr["Feature"].str.contains(item).any()
+
+#set(feature_importance_cat["Feature"]) & set(feature_importance_lr["Feature"])
+print("Common top20 in LogisticRegression and CatBoost:", common_important_features, len(common_important_features))
+
+common_important_feature_names = [item.split("__")[1] for item in common_important_features]
+print(common_important_feature_names)
+feature_importance_cat, feature_importance_lr
+```
+
+- Out of the top 20 features in both algorithms, sixteen features are common
+- Out of top 10 features in both algorithms, 8 features are common
+- Out of top 5 features in both algorithms, all 5 are common, though the order is slightly different
+- Age is the top feature in both algorithms
+
+The 8 features that are common in top 10 in both algorithms are:
+1. DHHGAGE - Age
+2. CCC_080 - Took medication for high blood cholestrol/lipids in the last one month
+3. GEN_005 - Perceived Health - Excellent, very good, good, fair, poor
+4. CCC_070 - Took medication for high blood pressure in the last one month
+5. ALC_015 - Frequency of drinking alcohol in the last 12 months
+6. HWTDGBCC - BMI classification - underweight or overweight/obese
+7. DHH_SEX - Sex at birth
+8. SDCDVFLA - Are you a visible minority
 
 
 # Conclusions
 
+We are able to recover many of the known factors associated with diabetes by building a predictive model on Community Health Survery data.
+The top factors recovered are age, high blood cholesterol, high blood pressure, BMI, sex, frequency of drinking alcohol, being a minority, and perceived health.
 
+The above features have been recovered in an unbiased way, starting from 691 original features in the survey data.
 
+Predictive machine learning is a powerful tool to extract useful associations between features from surveys, even when data are collected for generic purposes. For example, community health survey data gathers diabetes status as only one of the features, but we were able to recover known lifestyle and health factors associated with diabetes from these data in an unbiased manner.
+
+The predictive models themselves may not be very useful because there is an upper limit to the predictive power because of the fact that all features the remained in the data after pre-processing are discrete. It is also known that features such as blood sugar level are highly predictive of diabetes status, but are absent from the community health survey data.
+
+Therefore, these data can be used for recovering associations, but not to build the best predictive models.
 
 
 # Check performance on the test dataset

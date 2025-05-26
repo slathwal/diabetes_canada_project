@@ -15,7 +15,7 @@ This project explores and builds a predictive model for identifying individuals 
 ***
 ## Content
 1. [Objective](#objectives)
-2. [WIP - Methodology](#methodology)
+2. [Methodology](#methodology)
 3. [WIP - Results](#results)
 4. [WIP - Conclusions](#conclusions)
 5. [WIP - Working Notes](#working-notes)
@@ -93,6 +93,7 @@ For each of the models that were not overfitting the data, the top 20 features w
 ## Results
 
 1. Understanding the performance limit of a predicitve model on survey data
+
 2. Logistic Regression model
 3. Random Forest model
 3. Support Vector Classifier
