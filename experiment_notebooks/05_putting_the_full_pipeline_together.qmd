@@ -11,8 +11,10 @@ echo: true
 
 # Go to root directory of the project
 ```{python}
-import os
+#import os
+print(os.getcwd())
 os.chdir(os.path.abspath(".."))
+print(os.getcwd())
 ```
 
 # Import required libraries
@@ -69,6 +71,7 @@ X_test, y_test = separate_df_into_train_and_test(df_test_set, target_col)
 # Convert the target variable into True and False
 y_train, y_test = (y_train == 1), (y_test == 1)
 print(f"Distribution of classes in training data: {sorted(Counter(y_train).items())}")
+y_train.shape
 ```
 
 # Collect features to drop from the dataset
@@ -82,6 +85,7 @@ cols_to_exclude = additional_cols_to_exclude(X_train)
 cols_to_drop = cols_to_exclude
 X_train = X_train.drop(columns = cols_to_drop, inplace = False)
 X_test = X_test.drop(columns = cols_to_drop, inplace = False)
+print(f"Number of features after dropping flag and id columns: {X_train.shape[1]}")
 print(cols_to_drop)
 
 cols_with_30_pct_missing_data = return_columns_with_missing_data(X_train, pct_threshold=30)
@@ -89,6 +93,7 @@ cols_with_30_pct_missing_data = return_columns_with_missing_data(X_train, pct_th
 cols_to_drop = cols_with_30_pct_missing_data
 X_train = X_train.drop(columns = cols_to_drop, inplace = False)
 X_test = X_test.drop(columns = cols_to_drop, inplace = False)
+print(f"Number of features after dropping columns with more than 30 percent data missing: {X_train.shape[1]}")
 print(cols_to_drop)
 
 zero_variance_cols = cols_with_zero_variance(X_train)
@@ -96,6 +101,7 @@ zero_variance_cols = cols_with_zero_variance(X_train)
 cols_to_drop = zero_variance_cols
 X_train = X_train.drop(columns = cols_to_drop, inplace = False)
 X_test = X_test.drop(columns = cols_to_drop, inplace = False)
+print(f"Number of features after dropping zero variance columns: {X_train.shape[1]}")
 print(cols_to_drop)
 
 
@@ -107,6 +113,7 @@ corr_cols_to_drop = ord_cols_to_drop+cat_cols_to_drop
 cols_to_drop = corr_cols_to_drop
 X_train = X_train.drop(columns = cols_to_drop, inplace = False)
 X_test = X_test.drop(columns = cols_to_drop, inplace = False)
+print(f"Number of features after dropping correlated columns: {X_train.shape[1]}")
 
 ord_cols_mod = [col for col in ord_cols if col not in ord_cols_to_drop]
 cat_cols_mod = [col for col in cat_cols if col not in cat_cols_to_drop]
@@ -155,6 +162,9 @@ lr_clf = Pipeline([
 lr_cv = cross_validate(lr_clf, X_resampled, y_resampled, cv = 5, scoring = ["neg_log_loss", "f1", "precision", "recall"])
 
 lr_cv
+print(f"Precision: {lr_cv['test_precision'].mean()}")
+print(f"Recall: {lr_cv['test_recall'].mean()}")
+print(f"F1: {lr_cv['test_f1'].mean()}")
 ```
 
 ## Get the predicted labels and probabilities from the fitted model using cross_val_predict
@@ -202,6 +212,7 @@ ax.set_title("Absolute coefficients of top 20 features in the Logistic Regressio
 ax.legend("")
 ax.set_xlabel("Absolute Value of Coefficient")
 plt.show()
+fig.savefig("images/lr_feature_importance.png")
 ```
 
 ## Plot the learning curve for Logistic Regression model
@@ -228,10 +239,17 @@ ax.set_title("Learning curves for Logistic Regression on balanced data (5-fold C
 ax.set_ylabel("F1 score")
 ax.set_xlabel("Training data size")
 plt.show()
+fig.savefig("images/lr_learning_curve.png")
 ```
 
 - The learning curves show that there is still room for some improvement if we increase the data because they have not plateaued yet.
 - The learning curves show that there is not much overfitting as the performance on training and validation sets are quite similar when full data are used.
+
+## Save the model
+```{python}
+import joblib
+joblib.dump(lr_clf, "models/diabetes_prediction_lr_model.pkl")
+```
 
 # Fit a random forest classifier for comparison
 ```{python}
@@ -245,6 +263,9 @@ rf_clf = Pipeline([
 
 rf_cv = cross_validate(rf_clf, X_resampled, y_resampled, cv=5, scoring=["neg_log_loss", "f1", "precision", "recall"])
 rf_cv
+print(f"Precision: {rf_cv['test_precision'].mean()}")
+print(f"Recall: {rf_cv['test_recall'].mean()}")
+print(f"F1: {rf_cv['test_f1'].mean()}")
 ```
 
 ## Plot the learning curve for the Random Forest model
@@ -321,6 +342,7 @@ ax.set_title("Learning curves for RandomForest on balanced data (5-fold CV)")
 ax.set_ylabel("F1 score")
 ax.set_xlabel("Training data size")
 plt.show()
+fig.savefig("images/rf_learning_curve.png")
 ```
 
 Even after tuning, the model random forest model is still overfitting, though the training curve is going down with more data. RandomForest model does not seem to be very useful for these data.
@@ -392,6 +414,9 @@ svc_clf = Pipeline([
 svc_cv = cross_validate(svc_clf, X_resampled, y_resampled, cv = 3, scoring = ["neg_log_loss", "f1", "precision", "recall"])
 
 svc_cv
+print(f"Precision: {svc_cv['test_precision'].mean()}")
+print(f"Recall: {svc_cv['test_recall'].mean()}")
+print(f"F1: {svc_cv['test_f1'].mean()}")
 ```
 
 ## Plot the learning curve for the support vector classifier
@@ -414,9 +439,10 @@ ax.set_title("Learning curves for Support Vector Classifier on balanced data (4-
 ax.set_ylabel("F1 score")
 ax.set_xlabel("Training data size")
 plt.show()
+fig.savefig("images/svc_learning_curve.png")
 ```
 
-The learning curves show that the SVC with rbf kernel is also overfitting the training data, though the curves have not plateaued yet and and the training f1 score is falling and validation score is increasing.
+The learning curves show that the SVC with rbf kernel is also overfitting the training data, though the curves have not plateaued yet and and the training f1 score is falling and validation score is increasing. However, when I ran SVC with linear kernel, the model does not overfit.
 
 ## Tune the model?
 
@@ -503,6 +529,10 @@ catboost= CatBoostClassifier(
 cat_cv = cross_validate(catboost, X_processed, y_resampled, cv = 3, scoring = ["neg_log_loss", "f1", "precision", "recall"])
 
 cat_cv
+
+print(f"Precision: {cat_cv['test_precision'].mean()}")
+print(f"Recall: {cat_cv['test_recall'].mean()}")
+print(f"F1: {cat_cv['test_f1'].mean()}")
 ```
 
 
@@ -525,6 +555,7 @@ ax.set_title("Learning curves for Catboost on balanced data (5-fold CV)")
 ax.set_ylabel("F1 score")
 ax.set_xlabel("Training data size")
 plt.show()
+fig.savefig("images/catboost_learning_curve.png")
 ```
 
 The learning curve for catboost with a low learning rate slightly overfits the data, but provides a good overall fit.
@@ -565,6 +596,13 @@ ax.set_ylim(bottom = 0)
 
 ## Get the most important features 
 
+## Save the model
+```{python}
+import joblib
+joblib.dump(catboost, "models/diabetes_prediction_catboost_model.pkl")
+```
+
+
 ```{python}
 importances = catboost.get_feature_importance()
 importances
@@ -579,11 +617,14 @@ ax.set_title("Absolute coefficients of top 20 features in the CatBoost Model")
 ax.legend("")
 ax.set_xlabel("Feature Importance")
 plt.show()
+fig.savefig("images/catboost_feature_importance.png")
 ```
 
 
+
+
 # Most important features in the data
-SVC and RandomForest Classifier are overfitting the data. LogisticRegression and CatBoost as much better. Compare top20 features from LogisticRegression and CatBoost
+RandomForest Classifier is overfitting the data and SVC is too slow. LogisticRegression and CatBoost as much better. Compare top20 features from LogisticRegression and CatBoost
 
 ```{python}
 common_important_features = [item for item in feature_importance_cat["Feature"][-10:] if feature_importance_lr["Feature"][-10:].str.contains(item).any()] 
