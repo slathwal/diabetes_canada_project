@@ -17,8 +17,8 @@ This project explores and builds a predictive model for identifying individuals 
 1. [Objective](#objectives)
 2. [Methodology](#methodology)
 3. [WIP - Results](#results)
-4. [WIP - Conclusions](#conclusions)
-5. [WIP - Working Notes](#working-notes)
+4. [Conclusions](#conclusions)
+5. [Working Notes](#working-notes)
 
 ## Objective
 
@@ -28,50 +28,53 @@ The main goal of this project is to understand the following:
 
 ## Methodology
 
-**Exploratory Data Analysis**
+#### Exploratory Data Analysis**
 
-1. Understand the variables present in the data
+##### Understand the variables present in the data
 
 The data consist of 691 variables. All variables contained data encoded as numbers. It was important to use the data dictionary given along with the data to understand what the codes meant. These variables span categories such as location, demographics, work details, level of education, general health, general mental health, chronic disease, lifestyle factors such as exercise, diet, smoking, tobacco, cannabis, alcohol, drugs, access to primary health and other healthcare facilities, sense of connection to community and healthcare services, food security, income, health insurance etc.
 
 We need some way to reduce these variables for the predictive model.
 
-2. Filter the data to include only adults and people with known diabetes status.
+##### Filter the data to include only adults and people with known diabetes status.
 
 As a first step, data were included for the adult population (age 18+) and for people whose diabetes status was known.
 
-3. Separate the data into training and test sets
+##### Separate the data into training and test sets
 
 At this stage, 30% of the data were kept aside as test set. I made sure to do a stratified split of the data to ensure that the ratio of diabetes to non-diabetes cases was the same in training data and test data.
 The rest of the steps were performed with the training data.
 
-4. Calculate missing values for each variable and remove variables with >30% missing data
+#### Intial feature selection
+
+##### Calculate missing values for each variable and remove variables with >30% missing data
 
 A key observation was that missing data was encoded as numerical codes. The exact code used varied from feature to feature, but missing data categories were the same across the data. These categories were:
     1. Valid skip
     2. Don't know
     3. Refusal
     4. Not stated
-The codes used ranged from 6-9, 96-99, 996-999, 9996-9999, 999.6 to 999.9 etc. I wrote a function to identify the missing codes in each column and convert them to na values. Then the percentage of data missing for each feature was calculcated and 
-the features with more than 30% missing data were excluded.
+The codes used ranged from 6-9, 96-99, 996-999, 9996-9999, 999.6 to 999.9 etc. I wrote a function to identify the missing codes in each column and convert them to na values. Then the percentage of data missing for each feature was calculcated and the features with more than 30% missing data were excluded.
 
 
-5. Remove variables that have same value across all rows and that have different values across all rows, as well as variables that do not contain any useful information.
+##### Remove variables that have same value across all rows and that have different values across all rows, as well as variables that do not contain any useful information.
 
 
-6. Identify ordinal and categorical variables, calculate correlation between all variables and drop highly correlated variables.
+##### Identify ordinal and categorical variables, calculate correlation between all variables and drop highly correlated variables.
 
 Out of the remaining variables, I plotted each of them to identify which ones were ordinal, i.e., where numeric codes had an order and which were nominal/categorical, i.e., the numeric codes did not have an order. For example, sex is a nominal column and houshold income is an ordinal column.
 
-7. Undersample the data to balance classes.
+##### Undersample the data to balance classes.
 
 The training data had ~6900 diabetes cases and a much higher number of non-diabetes cases. Therefore, I undersampled the non-diabetes cases to balance the classes and get a total of ~13400 training samples.
 
-8. Pre-process the data
+#### Data Pre-processing
+
+##### Pre-process the categorical and ordinal columns
     1. Ordinal columns: For ordinal columns, I convert the missing data numeric codes to na values, impute the missing data using most-frequent value, and scale the data using min-max scaler
     2. For nominal/categorical columns, I convert the missing data numeric codes to na values, impute the missing data using most-frequent value and use one-hot encoding.
 
-9. Fit a model
+#### Build a predictive model
 
 I tried four different models on the data:
     1. Logistic Regression
@@ -79,27 +82,50 @@ I tried four different models on the data:
     3. Support Vector Classifier
     4. CatBoost
 
-10. Evaluate the model fit and its performance.
+##### Evaluate the model fit and its performance.
 
 I evaluated the models using cross-validation. In particular, for each of the models, the following were examined:
     1. The learning curves on training set and validation set. these were used to evaluate if the model was overfitting the data or not.
     2. Confusion matrix to identify false positives and false negatives
     3. Precision recall curve
 
-11. Identify the most important features contributing to prediction of diabetes status.
+##### Identify the most important features contributing to prediction of diabetes status.
 
 For each of the models that were not overfitting the data, the top 20 features were compared.
 
 ## Results
 
-1. Understanding the performance limit of a predicitve model on survey data
+#### Understanding the performance limit of a predicitve model on survey data
+After initial feature selection and pre-processing, all remaining features are discrete. Therefore, by selecting a couple of features, we can actually calculate the expected performance limit of a predictive model built on the data.
+I selected two columns - age and taking medication for high blood pressure - and looked at the diabetes status for each combination of these two features. A key observation here was that for the full data, with larger number of non-diabetes patients, it was not possible to manually select which group should be assigned True or False. However, for the balanced data, we could assign diabetes status as True or False based on which class had more number of patients. 
 
-2. Logistic Regression model
-3. Random Forest model
-3. Support Vector Classifier
-4. Xgboost
+Therefore, all subsequent analysis was done on balanced data, with equal number of diabetes and non-diabetes patients.
+
+If we assigned a prediction of True or False to each group based on the most common class in that group, I was able to calculate the true positive, true negative, false positive and false negative numbers, and therefore, precision, recall and F1 score for the balanced training data. These numbers gave the upper performance limit of a model using age, and blood pressure medication as the two features.
+
+This calculation also gave a performance metric to compare any predictive model that we build.
+
+#### Logistic Regression model
+Baseline logistic regression model, without any finetuning, does not overfit the data and achieves the maximum performance expected on the data.
+
+TO WRITE
+#### Random Forest model
+TO WRITE
+
+#### Support Vector Classifier
+TO WRITE
+
+#### CatBoost
+TO WRITE
+
+#### Most important features associated with diabetes
+
+TO WRITE
 
 ## Conclusions
+Predictive machine learning is a powerful tool to extract useful associations between features from surveys, even when data are collected for generic purposes. For example, community health survey data gathers diabetes status as only one of the features, but we were able to recover known lifestyle and health factors associated with diabetes from these data in an unbiased manner.
+
+The predictive models themselves may not be very useful because there is an upper limit to the predictive power because of the fact that all features the remained in the data after pre-processing are discrete. It is also known that features such as blood sugar level are highly predictive of diabetes status, but are absent from the community health survey data.
 
 ## Working Notes
 
