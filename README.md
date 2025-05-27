@@ -128,6 +128,7 @@ The average precision, recall and f1 score of the logistic regression model are 
 | F1           | 0.79  |
 
 #### Top 20 features
+
 ![](images/lr_feature_importance.png)
 
 ### Random Forest Model
@@ -135,15 +136,26 @@ The average precision, recall and f1 score of the logistic regression model are 
 Random Forest model is overfitting the data even after hyperparameter tuning. Therefore, I am not using Random Forest for further analysis
 
 #### Learning Curve
+
 ![](images/rf_learning_curve.png)
 
 ### Support Vector Classifier
 
-With the default parameters, SVC is overfitting the data, but the curves are improving with more training data. However, SVC was too slow and I am not using it for further analysis.
+With the linear kernel, SVC performs quite well on the data and does not overfit. However, SVC was too slow and I am not using it for further analysis.
 
 #### Learning Curve
 
 ![](images/svc_learning_curve.png)
+
+#### Performance metrics
+
+The average precision, recall and f1 score of the linear SVC model are as follows:
+
+| Score metric | Value |
+|--------------|-------|
+| Precision    | 0.76  |
+| Recall       | 0.83  |
+| F1           | 0.79  |
 
 ### CatBoost
 
@@ -164,21 +176,14 @@ The average precision, recall and f1 score of the logistic regression model are 
 | F1           | 0.80  |
 
 #### Top 20 features
+
 ![](images/catboost_feature_importance.png)
 
 ### Most important features associated with diabetes
 
-The 8 features that are common in top 10 features from both Logistic Regression and CatBoost are:
-1. DHHGAGE - Age
-2. CCC_080 - Took medication for high blood cholestrol/lipids in the last one month
-3. GEN_005 - Perceived Health - Excellent, very good, good, fair, poor
-4. CCC_070 - Took medication for high blood pressure in the last one month
-5. ALC_015 - Frequency of drinking alcohol in the last 12 months
-6. HWTDGBCC - BMI classification - underweight or overweight/obese
-7. DHH_SEX - Sex at birth
-8. SDCDVFLA - Are you a visible minority
+The 8 features that are common in top 10 features from both Logistic Regression and CatBoost are: 1. DHHGAGE - Age 2. CCC_080 - Took medication for high blood cholestrol/lipids in the last one month 3. GEN_005 - Perceived Health - Excellent, very good, good, fair, poor 4. CCC_070 - Took medication for high blood pressure in the last one month 5. ALC_015 - Frequency of drinking alcohol in the last 12 months 6. HWTDGBCC - BMI classification - underweight or overweight/obese 7. DHH_SEX - Sex at birth 8. SDCDVFLA - Are you a visible minority
 
-- Age is the most important feature in both models. The top 5 features are also common in both models, though the order of importance differs slightly.
+-   Age is the most important feature in both models. The top 5 features are also common in both models, though the order of importance differs slightly.
 
 ## Conclusions {#conclusions}
 
@@ -188,7 +193,11 @@ The predictive models themselves may not be very useful because there is an uppe
 
 ## Working Notes {#working-notes}
 
-2025/05/25
+2025/05/25 - 27 Clean up the notebooks, save figures, complete the Readme file.
+
+-   For SVC model, linear kernel fits the data well and rbf kernel overfits the data. However, SVC is too slow and does not perform better than catboost.
+
+-   I saved the models as pickle files, but it is important to note that data-pre-processing is different for Logistic regression model (where model contains the data pre-processing steps), and for CatBoost, where data pre-processing is done separately and the .pkl file contains only the catboost model.
 
 2025/05/21
 
@@ -213,7 +222,7 @@ The predictive models themselves may not be very useful because there is an uppe
 -   I also tried balancing the dataset with RandomUnderSampling and that also does not make any difference in the performance.
 -   Because all features are categorical, there is a limit to max performance, which is clear using a small number of variables.
 -   I don't think combining models would do much in this case.
--   I think I will also check a few other models like kNN classifier (kNN would not be good here because) and SVC, and perhaps try a dimensional reduction method, do error analysis on those with the 3 feature dataset and finalize the model. - TO DO
+-   I think I will also check a few other models like kNN classifier (kNN would not be good here because the features are discrete and not spread out) and SVC, and perhaps try a dimensional reduction method, do error analysis on those with the 3 feature dataset and finalize the model. - TO DO
 
 2025/05/17 - So far the performance of linear models (Logistic Regression) is similar to more complex models (RandomForest and XGBoost) - Fine-tuning the models: - Tried XGBoost, RandomForest, LogisticRegression - the performance of RandomForest improved with finetuning, reaching an f1 score of 0.42 - Better data pre-processing - Treat ordinal features as categorical - no change - Remove features that have low variance - no features with low variance - Remove features that are highly correlated - TO DO - Looked at what measures of correlation to use for ordinal and categorical/nominal data. - Peform automated feature selection - TO DO - Error Analysis - TO DO - Look at learning curves on training and validation data - TO DO - Try combining models to improve performance - TO DO
 
