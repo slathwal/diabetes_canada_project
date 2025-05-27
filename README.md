@@ -28,7 +28,7 @@ The main goal of this project is to understand the following:
 
 **Can a general community health survey data be used to extract useful information about factors associated with a chronic condition such as diabetes?**
 
-## Methodology {#methodology}
+## Methodology
 
 ### Exploratory Data Analysis
 
@@ -87,7 +87,7 @@ I evaluated the models using cross-validation. In particular, for each of the mo
 
 For each of the models that were not overfitting the data, the top 20 features were compared.
 
-## Results {#results}
+## Results
 
 ### Number of features remaining after data-cleaning
 
@@ -135,7 +135,7 @@ The average precision, recall and f1 score of the logistic regression model are 
 
 Random Forest model is overfitting the data even after hyperparameter tuning. Therefore, I am not using Random Forest for further analysis
 
-#### Learning Curve
+#### Learning curve
 
 ![](images/rf_learning_curve.png)
 
@@ -143,7 +143,7 @@ Random Forest model is overfitting the data even after hyperparameter tuning. Th
 
 With the linear kernel, SVC performs quite well on the data and does not overfit. However, SVC was too slow and I am not using it for further analysis.
 
-#### Learning Curve
+#### Learning curve
 
 ![](images/svc_learning_curve.png)
 
@@ -181,17 +181,26 @@ The average precision, recall and f1 score of the logistic regression model are 
 
 ### Most important features associated with diabetes
 
-The 8 features that are common in top 10 features from both Logistic Regression and CatBoost are: 1. DHHGAGE - Age 2. CCC_080 - Took medication for high blood cholestrol/lipids in the last one month 3. GEN_005 - Perceived Health - Excellent, very good, good, fair, poor 4. CCC_070 - Took medication for high blood pressure in the last one month 5. ALC_015 - Frequency of drinking alcohol in the last 12 months 6. HWTDGBCC - BMI classification - underweight or overweight/obese 7. DHH_SEX - Sex at birth 8. SDCDVFLA - Are you a visible minority
+The 8 features that are common in top 10 features from both Logistic Regression and CatBoost are:
 
--   Age is the most important feature in both models. The top 5 features are also common in both models, though the order of importance differs slightly.
+1. DHHGAGE - Age 
+2. CCC_080 - Took medication for high blood cholestrol/lipids in the last one month 
+3. GEN_005 - Perceived Health - Excellent, very good, good, fair, poor 
+4. CCC_070 - Took medication for high blood pressure in the last one month 
+5. ALC_015 - Frequency of drinking alcohol in the last 12 months 
+6. HWTDGBCC - BMI classification - underweight or overweight/obese 
+7. DHH_SEX - Sex at birth 
+8. SDCDVFLA - Are you a visible minority
 
-## Conclusions {#conclusions}
+Age is the most important feature in both models. The top 5 features are also common in both models, though the order of importance differs slightly.
+
+## Conclusions
 
 Predictive machine learning is a powerful tool to extract useful associations between features from surveys, even when data are collected for generic purposes. For example, community health survey data gathers diabetes status as only one of the features, but we were able to recover known lifestyle and health factors associated with diabetes from these data in an unbiased manner.
 
 The predictive models themselves may not be very useful because there is an upper limit to the predictive power because of the fact that all features the remained in the data after pre-processing are discrete. It is also known that features such as blood sugar level are highly predictive of diabetes status, but are absent from the community health survey data.
 
-## Working Notes {#working-notes}
+## Working Notes
 
 2025/05/25 - 27 Clean up the notebooks, save figures, complete the Readme file.
 

@@ -1,5 +1,5 @@
 ---
-title: "Prediction the most important variables for presence of diabetes in Canadian Community Health Survey Data"
+title: "Using the Machine Learning checklist from Hands-on machine learning with scikit-learn, keras and tensorflow to think though the problem"
 author: "Shefali Lathwal"
 date: "2025-05-19"
 date-modified: last-modified
@@ -103,50 +103,14 @@ Done.
 Done
 
 ## 8. Convert the data to a format you can easily manipulate (without changing the data itself.)
-I am using pandas library in python to work with the csv file.
-```{python}
-df = pd.read_csv("/Users/shefalilathwal/Documents/diabetes_canada_project/data/pumf_cchs.csv")
-print(df.shape)
-col_list = df.columns.tolist()
-print(col_list)
-
-# Only keeping rows with a known diabetes status
-#Codes 9, 7, and 8 are for either refusing to disclose diabetes status, or not knowing or not stated. I should only keep the rows with known diabetes status.
-
-df = df[df["CCC_095"].isin([1.0, 2.0])]
-print(df["CCC_095"].value_counts())
-
-# Only keeping rows for adults - removing code = 1
-df = df[~(df["DHHGAGE"] == 1)]
-print(df["DHHGAGE"].value_counts())
-```
 
 ## 9. Ensure sensitive information is deleted or protected (e.g. by anonymizing)
-The data are released for public use and sensitive data has already been removed.
+
 
 ## 10. Check the size and type of data.
-The data are tabular with many features (600+) and survey responses in rows.
+
 
 ## 11. Sample a test set, put it aside, and never look at it (no data snooping).
-```{python}
-df_train_set, df_test_set = train_test_split(df, test_size = 0.3, random_state = 42, shuffle = True, stratify = df["CCC_095"])
-
-## Confirm stratification
-print(df_train_set["CCC_095"].value_counts()/df_train_set.shape[0], df_test_set["CCC_095"].value_counts()/df_test_set.shape[0], df["CCC_095"].value_counts()/df.shape[0])
-
-X_train = df_train_set.copy().drop(columns = "CCC_095", inplace = False)
-y_train = df_train_set["CCC_095"].copy()
-
-X_test = df_test_set.copy().drop(columns = "CCC_095", inplace = False)
-y_test = df_test_set["CCC_095"].copy()
-
-
-# Convert the target variable into True and False
-y_train = (y_train == 1)
-y_test = (y_test == 1)
-y_train.sum(), y_test.sum()
-```
-
 # Explore the data
 
 ## 1. Create a copy of the data for exploration - sampling it down to a manageable size if necessary

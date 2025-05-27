@@ -212,7 +212,7 @@ ax.set_title("Absolute coefficients of top 20 features in the Logistic Regressio
 ax.legend("")
 ax.set_xlabel("Absolute Value of Coefficient")
 plt.show()
-fig.savefig("images/lr_feature_importance.png")
+fig.savefig("images/lr_feature_importance.png", bbox_inches='tight')
 ```
 
 ## Plot the learning curve for Logistic Regression model
@@ -617,7 +617,7 @@ ax.set_title("Absolute coefficients of top 20 features in the CatBoost Model")
 ax.legend("")
 ax.set_xlabel("Feature Importance")
 plt.show()
-fig.savefig("images/catboost_feature_importance.png")
+fig.savefig("images/catboost_feature_importance.png", bbox_inches='tight')
 ```
 
 
